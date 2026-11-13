@@ -3,21 +3,6 @@ import 'theme/bv_theme.dart';
 // ---------------------------------------------------------------------------
 // Tolerant JSON helpers (the Spring backend returns entities directly)
 // ---------------------------------------------------------------------------
-<<<<<<< HEAD
-enum Role {
-  requester,
-  stores,
-  head,
-  om,
-  od1,
-  od2,
-  responsibleAuthority,
-  ho,
-  driver,
-  security,
-  admin,
-}
-=======
 double _d(dynamic v) => v is num ? v.toDouble() : (double.tryParse('$v') ?? 0);
 int _i(dynamic v) => v is num ? v.toInt() : (int.tryParse('$v') ?? 0);
 String _s(dynamic v) => v == null ? '' : '$v';
@@ -42,8 +27,7 @@ String qty(num v) => v == v.roundToDouble() ? v.toInt().toString() : v.toStringA
 // Roles. The backend has no login yet: the person picks a name and a role, the
 // role only decides which screens and buttons the app shows.
 // ---------------------------------------------------------------------------
-enum Role { requester, stores, head, om, od1, od2, ra, security }
->>>>>>> 644b51d7db41bc6a7eda86fbababccd98d16d8fb
+enum Role { requester, stores, head, om, od1, od2, ra, security, admin }
 
 extension RoleX on Role {
   String get label => switch (this) {
@@ -51,110 +35,46 @@ extension RoleX on Role {
         Role.stores => 'Stores Controller',
         Role.head => 'Headmaster',
         Role.om => 'Operations Manager',
-<<<<<<< HEAD
-        Role.od1 => 'OD1',
-        Role.od2 => 'OD2',
-        Role.responsibleAuthority => 'Responsible Authority',
-        Role.ho => 'Head Office Admin',
-        Role.driver => 'Driver',
-=======
         Role.od1 => 'Operations Directorate 1 (OD1)',
         Role.od2 => 'Operations Directorate 2 (OD2)',
         Role.ra => 'Responsible Authority (RA)',
->>>>>>> 644b51d7db41bc6a7eda86fbababccd98d16d8fb
         Role.security => 'Security Officer',
         Role.admin => 'System Administrator',
       };
-
-  /// Matches the backend `UserRole` enum constant. `security` has no backend
-  /// counterpart yet, so it returns null.
-  String? get apiName => switch (this) {
-        Role.requester => 'REQUESTER',
-        Role.stores => 'STOCK_CONTROLLER',
-        Role.head => 'SCHOOL_HEAD',
-        Role.om => 'OPERATIONS_MANAGER',
-        Role.od1 => 'OD1',
-        Role.od2 => 'OD2',
-        Role.responsibleAuthority => 'RESPONSIBLE_AUTHORITY',
-        Role.ho => 'HOA',
-        Role.driver => 'DRIVER',
-        Role.security => null,
-        Role.admin => 'ADMIN',
-      };
 }
 
-<<<<<<< HEAD
-/// Departments an administrator can assign to a user.
-const kDepartments = [
-  'Science', 'Mathematics', 'Humanities', 'Languages', 'Sports', 'Admin',
-  'Boarding', 'Library', 'Kitchen', 'ICT', 'Stores', 'Transport', 'Security',
-  'Administration', 'Operations', 'Head Office',
-];
-
-/// Mirrors the backend `User` entity / `UserResponseDTO`. The password is kept
-/// here only because this is the in-memory demo store; the real API never
-/// returns it.
-class AppUser {
-  AppUser({
-    required this.id,
-    required this.firstName,
-    required this.lastName,
-    required this.username,
-    required this.email,
-    required this.password,
-    required this.role,
-    this.employeeNumber = '',
-    this.phoneNumber = '',
-    this.department = '',
-    this.jobTitle = '',
-    this.active = true,
-    this.accountLocked = false,
-    this.lastLogin,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-  })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? createdAt ?? DateTime.now();
-
-  final String id;
-  final String firstName;
-  final String lastName;
-  final String username;
-  final String email;
-  final String password;
-  final String employeeNumber;
-  final String phoneNumber;
-  final String jobTitle;
-  final DateTime createdAt;
-  String department; // empty until an administrator assigns one
-  Role role;
-  bool active;
-  bool accountLocked;
-  DateTime? lastLogin;
-  DateTime updatedAt;
-
-  String get name => '$firstName $lastName'.trim();
-=======
 // ---------------------------------------------------------------------------
 // Catalogue and stock
 // ---------------------------------------------------------------------------
 class Dept {
-  Dept(this.id, this.name, this.description);
-  factory Dept.fromJson(Map<String, dynamic> j) => Dept(_i(j['id']), _s(j['name']), _s(j['description']));
+  Dept(this.id, this.name, this.description, [this.active = true]);
+  factory Dept.fromJson(Map<String, dynamic> j) =>
+      Dept(_i(j['id']), _s(j['name']), _s(j['description']), j['active'] is bool ? j['active'] as bool : true);
   final int id;
   final String name;
   final String description;
+  final bool active;
 }
 
 class Category {
-  Category(this.id, this.name, this.departmentName, this.departmentId);
+  Category(this.id, this.name, this.departmentName, this.departmentId, {this.description = '', this.active = true});
   factory Category.fromJson(Map<String, dynamic> j) {
     final d = _m(j['department']);
-    return Category(_i(j['id']), _s(j['name']), _s(d?['name'] ?? j['departmentName']), _i(d?['id'] ?? j['departmentId']));
+    return Category(
+      _i(j['id']),
+      _s(j['name']),
+      _s(d?['name'] ?? j['departmentName']),
+      _i(d?['id'] ?? j['departmentId']),
+      description: _s(j['description']),
+      active: j['active'] is bool ? j['active'] as bool : true,
+    );
   }
   final int id;
   final String name;
   final String departmentName;
   final int departmentId;
+  final String description;
+  final bool active;
 }
 
 class Item {
@@ -167,6 +87,9 @@ class Item {
     required this.departmentName,
     required this.minLevel,
     required this.reorderLevel,
+    this.description = '',
+    this.categoryId = 0,
+    this.active = true,
   });
   factory Item.fromJson(Map<String, dynamic> j) {
     final c = _m(j['category']);
@@ -180,8 +103,14 @@ class Item {
       departmentName: _s(j['departmentName'] ?? d?['name']),
       minLevel: _d(j['minimumStockLevel']),
       reorderLevel: _d(j['reorderLevel']),
+      description: _s(j['description']),
+      categoryId: _i(j['categoryId'] ?? c?['id']),
+      active: j['active'] is bool ? j['active'] as bool : true,
     );
   }
+  final String description;
+  final int categoryId;
+  final bool active;
   final int id;
   final String code;
   final String name;
@@ -194,20 +123,25 @@ class Item {
 }
 
 class Location {
-  Location(this.id, this.name, this.description);
-  factory Location.fromJson(Map<String, dynamic> j) => Location(_i(j['id']), _s(j['name']), _s(j['description']));
+  Location(this.id, this.name, this.description, [this.active = true]);
+  factory Location.fromJson(Map<String, dynamic> j) =>
+      Location(_i(j['id']), _s(j['name']), _s(j['description']), j['active'] is bool ? j['active'] as bool : true);
   final int id;
   final String name;
   final String description;
+  final bool active;
 }
 
 class Balance {
-  Balance(this.item, this.location, this.qty);
+  Balance(this.item, this.location, this.qty, {this.id = 0, this.updated});
   factory Balance.fromJson(Map<String, dynamic> j) => Balance(
-      Item.fromJson(_m(j['item']) ?? {}), Location.fromJson(_m(j['location']) ?? {}), _d(j['quantityOnHand']));
+      Item.fromJson(_m(j['item']) ?? {}), Location.fromJson(_m(j['location']) ?? {}), _d(j['quantityOnHand']),
+      id: _i(j['id']), updated: _dt(j['lastUpdated']));
+  final int id;
   final Item item;
   final Location location;
   final double qty;
+  final DateTime? updated;
 }
 
 class Movement {
@@ -225,7 +159,6 @@ class Movement {
   final String remarks;
   final String to;
   final String from;
->>>>>>> 644b51d7db41bc6a7eda86fbababccd98d16d8fb
 }
 
 // ---------------------------------------------------------------------------
@@ -377,10 +310,11 @@ class Requisition {
 }
 
 class IssueLine {
-  IssueLine(this.requisitionLineId, this.item, this.location, this.qty, this.uom);
+  IssueLine(this.requisitionLineId, this.item, this.location, this.qty, this.uom, [this.remarks = '']);
   factory IssueLine.fromJson(Map<String, dynamic> j) => IssueLine(
       _i(_m(j['requisitionLine'])?['id']), Item.fromJson(_m(j['item']) ?? {}),
-      _s(_m(j['stockLocation'])?['name']), _d(j['quantityIssued']), _s(j['unitOfMeasure']));
+      _s(_m(j['stockLocation'])?['name']), _d(j['quantityIssued']), _s(j['unitOfMeasure']), _s(j['remarks']));
+  final String remarks;
   final int requisitionLineId;
   final Item item;
   final String location;
@@ -389,10 +323,13 @@ class IssueLine {
 }
 
 class StockIssue {
-  StockIssue(this.id, this.number, this.requisitionId, this.issuedBy, this.receivedBy, this.date, this.remarks, this.lines);
+  StockIssue(this.id, this.number, this.requisitionId, this.issuedBy, this.receivedBy, this.date, this.remarks, this.lines,
+      [this.requisitionNumber = '']);
   factory StockIssue.fromJson(Map<String, dynamic> j) => StockIssue(
       _i(j['id']), _s(j['issueNumber']), _i(_m(j['requisition'])?['id']), _s(j['issuedBy']), _s(j['receivedBy']),
-      _dt(j['issueDate']), _s(j['remarks']), _l(j['items'], IssueLine.fromJson));
+      _dt(j['issueDate']), _s(j['remarks']), _l(j['items'], IssueLine.fromJson),
+      _s(_m(j['requisition'])?['requisitionNumber']));
+  final String requisitionNumber;
   final int id;
   final String number;
   final int requisitionId;

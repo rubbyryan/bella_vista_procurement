@@ -3,6 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../features/admin/catalogue_page.dart';
+import '../features/admin/categories_page.dart';
+import '../features/admin/departments_page.dart';
+import '../features/admin/items_page.dart';
+import '../features/stock/stock_balances_page.dart';
+import '../features/issuing/stock_issues_page.dart';
+import '../features/admin/locations_page.dart';
+import '../features/admin/users_page.dart';
 import '../features/admin/settings_page.dart';
 import '../features/auth/auth_page.dart';
 import '../features/dashboard/dashboard_page.dart';
@@ -68,6 +75,13 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(path: '/app/stock', builder: (_, __) => const StockPage()),
           GoRoute(path: '/app/catalogue', builder: (_, __) => const CataloguePage()),
+          GoRoute(path: '/app/departments', builder: (_, __) => const DepartmentsPage()),
+          GoRoute(path: '/app/categories', builder: (_, __) => const CategoriesPage()),
+          GoRoute(path: '/app/items', builder: (_, __) => const ItemsPage()),
+          GoRoute(path: '/app/balances', builder: (_, __) => const StockBalancesPage()),
+          GoRoute(path: '/app/issues', builder: (_, __) => const StockIssuesPage()),
+          GoRoute(path: '/app/locations', builder: (_, __) => const LocationsPage()),
+          GoRoute(path: '/app/users', builder: (_, __) => const UsersPage()),
           GoRoute(path: '/app/settings', builder: (_, __) => const SettingsPage()),
         ],
       ),

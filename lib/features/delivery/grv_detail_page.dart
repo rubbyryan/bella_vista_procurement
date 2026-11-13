@@ -27,9 +27,9 @@ class _GrvDetailPageState extends ConsumerState<GrvDetailPage> {
   List<StepInfo> _steps(Grv g) {
     if (g.status == 'REJECTED') {
       return const [
-        StepInfo('Received', StepState.done),
-        StepInfo('Verified', StepState.done),
-        StepInfo('OM', StepState.rejected),
+        StepInfo('Received', BVStepState.done),
+        StepInfo('Verified', BVStepState.done),
+        StepInfo('OM', BVStepState.rejected),
       ];
     }
     final cur = switch (g.status) {
@@ -38,7 +38,7 @@ class _GrvDetailPageState extends ConsumerState<GrvDetailPage> {
       'PENDING_OM_APPROVAL' => 2,
       _ => 3,
     };
-    StepState st(int i) => i < cur ? StepState.done : (i == cur ? StepState.current : StepState.todo);
+    BVStepState st(int i) => i < cur ? BVStepState.done : (i == cur ? BVStepState.current : BVStepState.todo);
     return [StepInfo('Received', st(0)), StepInfo('Verified', st(1)), StepInfo('OM approves', st(2)), StepInfo('In stock', st(3))];
   }
 

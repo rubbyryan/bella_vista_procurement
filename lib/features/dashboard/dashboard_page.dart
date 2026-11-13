@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/models.dart';
-import '../../core/shell.dart';
 import '../../core/state.dart';
 import '../../core/theme/bv_theme.dart';
 import '../../core/widgets.dart';
@@ -97,73 +96,14 @@ class DashboardPage extends ConsumerWidget {
     final err = [reqsA, prsA, posA, grvsA].where((a) => a.hasError).firstOrNull;
     final loading = [reqsA, prsA, posA, grvsA].any((a) => a.isLoading && !a.hasValue);
 
-<<<<<<< HEAD
-    List<Widget> kpis;
-    switch (u.role) {
-      case Role.stores:
-        kpis = [
-          KpiCard(label: 'Awaiting my review', value: '${queue.length}', icon: Icons.fact_check_rounded, onTap: () => context.go('/app/requisitions')),
-          KpiCard(label: 'Open requisitions', value: '$openReqs', icon: Icons.shopping_cart_rounded, onTap: () => context.go('/app/requisitions')),
-          KpiCard(label: 'Below reorder level', value: '${s.lowStockCount}', icon: Icons.warning_amber_rounded, warn: true, onTap: () => context.go('/app/stock')),
-          KpiCard(label: 'Deliveries expected', value: '${dels.length}', icon: Icons.local_shipping_rounded, onTap: () => context.go('/app/deliveries')),
-        ];
-      case Role.head:
-        kpis = [
-          KpiCard(label: 'Pending approval', value: '${queue.length}', icon: Icons.pending_actions_rounded, warn: true, onTap: () => context.go('/app/requisitions')),
-          KpiCard(label: 'Approved by me', value: '${s.approvedBy(Role.head)}', icon: Icons.check_circle_rounded),
-        ];
-      case Role.om:
-        final value = queue.fold<double>(0, (a, r) => a + r.total);
-        kpis = [
-          KpiCard(label: 'Pending approval', value: '${queue.length}', icon: Icons.pending_actions_rounded, warn: true, onTap: () => context.go('/app/requisitions')),
-          KpiCard(label: 'Value waiting', value: money(value), icon: Icons.payments_rounded),
-          KpiCard(label: 'Critical stock items', value: '${s.stock.where((x) => x.level == StockLevel.critical || x.level == StockLevel.out).length}', icon: Icons.warning_amber_rounded, warn: true, onTap: () => context.go('/app/stock')),
-        ];
-      case Role.ho:
-        kpis = [
-          KpiCard(label: 'Pending approval', value: '${s.reqs.where((r) => r.status == ReqStatus.pendingHo).length}', icon: Icons.pending_actions_rounded, warn: true, onTap: () => context.go('/app/requisitions')),
-          KpiCard(label: 'Vouchers open', value: '${s.vouchers.where((v) => !v.released).length}', icon: Icons.receipt_long_rounded, onTap: () => context.go('/app/vouchers')),
-          KpiCard(label: 'Batches waiting', value: '${s.reqs.where((r) => s.canRelease(r, u)).length}', icon: Icons.inventory_rounded, onTap: () => context.go('/app/requisitions')),
-        ];
-      case Role.od1:
-      case Role.od2:
-      case Role.responsibleAuthority:
-        kpis = [
-          KpiCard(label: 'Open requisitions', value: '$openReqs', icon: Icons.shopping_cart_rounded, onTap: () => context.go('/app/requisitions')),
-        ];
-      case Role.admin:
-        kpis = [
-          KpiCard(label: 'Pending accounts', value: '${s.users.where((x) => !x.active).length}', icon: Icons.group_add_rounded, warn: true, onTap: () => context.go('/app/users')),
-          KpiCard(label: 'Active users', value: '${s.users.where((x) => x.active).length}', icon: Icons.verified_user_rounded, onTap: () => context.go('/app/users')),
-          KpiCard(label: 'All users', value: '${s.users.length}', icon: Icons.group_rounded, onTap: () => context.go('/app/users')),
-        ];
-      case Role.driver:
-        kpis = [
-          KpiCard(label: 'Assigned to me', value: '${dels.length}', icon: Icons.local_shipping_rounded, warn: true, onTap: () => context.go('/app/deliveries')),
-          KpiCard(label: 'Collected / dispatched', value: '${s.notes.where((n) => n.sigs.containsKey(SignStage.driver)).length}', icon: Icons.check_circle_rounded),
-        ];
-      case Role.security:
-        kpis = [
-          KpiCard(label: 'Gate checks due', value: '${dels.length}', icon: Icons.shield_rounded, warn: true, onTap: () => context.go('/app/deliveries')),
-          KpiCard(label: 'Inspected', value: '${s.notes.where((n) => n.sigs.containsKey(SignStage.security)).length}', icon: Icons.check_circle_rounded),
-        ];
-      case Role.requester:
-        final mine = s.reqs.where((r) => r.requesterId == u.id).toList();
-        kpis = [
-          KpiCard(label: 'My requisitions', value: '${mine.length}', icon: Icons.description_rounded, onTap: () => context.go('/app/requisitions')),
-          KpiCard(label: 'Open', value: '${mine.where((r) => r.status.isOpen).length}', icon: Icons.hourglass_top_rounded),
-          KpiCard(label: 'Rejected: to fix', value: '${mine.where((r) => r.status == ReqStatus.rejected).length}', icon: Icons.report_rounded, warn: true, onTap: () => context.go('/app/requisitions')),
-        ];
-=======
     PageBody wrap(List<Widget> c) => PageBody(
-          title: '${me.role.label} Dashboard',
-          subtitle: '${_greeting()}, ${me.name.split(' ').first}',
-          children: c,
-        );
+      title: '${me.role.label} Dashboard',
+      subtitle: '${_greeting()}, ${me.name.split(' ').first}${me.role == Role.requester && me.department.isNotEmpty ? ' | ${me.department}' : ''}',
+      children: c,
+    );
 
     if (err != null) {
       return wrap([AsyncBody<int>(value: AsyncError(err.error!, StackTrace.empty), builder: (_) => const SizedBox(), onRetry: () => refreshAll(ref))]);
->>>>>>> 644b51d7db41bc6a7eda86fbababccd98d16d8fb
     }
     if (loading) return wrap(const [Panel(child: Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())))]);
 
@@ -209,22 +149,18 @@ class DashboardPage extends ConsumerWidget {
         child: work.isEmpty
             ? const Padding(padding: EdgeInsets.all(8), child: Text('Nothing is waiting for you. Great work!'))
             : Column(children: [
-                for (var i = 0; i < work.length; i++) ...[
-                  if (i > 0) const Divider(height: 1),
-                  ListRow(
-                    path: work[i].path,
-                    ref: work[i].ref,
-                    a: work[i].kind,
-                    b: work[i].why,
-                    chip: StatePill(work[i].status),
-                  ),
-                ],
-              ]),
+          for (var i = 0; i < work.length; i++) ...[
+            if (i > 0) const Divider(height: 1),
+            ListRow(
+              path: work[i].path,
+              ref: work[i].ref,
+              a: work[i].kind,
+              b: work[i].why,
+              chip: StatePill(work[i].status),
+            ),
+          ],
+        ]),
       ),
-      Wrap(spacing: 12, runSpacing: 12, children: [
-        for (final n in navFor(me.role).where((n) => !n.path.endsWith('dashboard') && !n.path.endsWith('settings')))
-          OutlinedButton.icon(style: canvasOutlined(context), onPressed: () => go(n.path), icon: Icon(n.icon), label: Text(n.label)),
-      ]),
     ]);
   }
 }

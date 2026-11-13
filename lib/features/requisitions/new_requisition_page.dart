@@ -35,7 +35,19 @@ class _NewRequisitionPageState extends ConsumerState<NewRequisitionPage> {
   final _diners = TextEditingController();
   final _lines = <_Line>[_Line()];
   String _dept = 'Science';
+  bool _fixedDept = false; // true when the department comes from the user's account
   bool _kitchen = false, _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final d = ref.read(sessionProvider)?.department ?? '';
+    if (d.isNotEmpty) {
+      _dept = d;
+      _fixedDept = true;
+      _kitchen = d == 'Kitchen / Dining';
+    }
+  }
 
   @override
   void dispose() {
@@ -82,6 +94,15 @@ class _NewRequisitionPageState extends ConsumerState<NewRequisitionPage> {
   Widget build(BuildContext context) {
     final me = ref.watch(sessionProvider);
     if (me == null) return const SizedBox();
+    if (me.role != Role.requester) {
+      return PageBody(
+        title: 'New item requisition',
+        actions: [
+          OutlinedButton(style: canvasOutlined(context), onPressed: () => context.go('/app/requisitions'), child: const Text('Back')),
+        ],
+        children: const [Panel(child: Text('Only a Requester can create a requisition.'))],
+      );
+    }
     final items = ref.watch(itemsP);
     final bal = ref.watch(balancesP);
     final onHand = bal.valueOrNull == null ? <int, double>{} : onHandByItem(bal.valueOrNull!);
@@ -107,15 +128,20 @@ class _NewRequisitionPageState extends ConsumerState<NewRequisitionPage> {
                         Wrap(spacing: 16, runSpacing: 12, children: [
                           SizedBox(
                             width: 260,
-                            child: DropdownButtonFormField<String>(
-                              value: _dept,
-                              decoration: const InputDecoration(labelText: 'Department'),
-                              items: [for (final d in kSchoolDepartments) DropdownMenuItem(value: d, child: Text(d))],
-                              onChanged: (v) => setState(() {
-                                _dept = v ?? _dept;
-                                _kitchen = _dept == 'Kitchen / Dining' ? true : _kitchen;
-                              }),
-                            ),
+                            child: _fixedDept
+                                ? InputDecorator(
+                                    decoration: const InputDecoration(labelText: 'Department', helperText: 'Set on your account'),
+                                    child: Text(_dept),
+                                  )
+                                : DropdownButtonFormField<String>(
+                                    value: _dept,
+                                    decoration: const InputDecoration(labelText: 'Department'),
+                                    items: [for (final d in kSchoolDepartments) DropdownMenuItem(value: d, child: Text(d))],
+                                    onChanged: (v) => setState(() {
+                                      _dept = v ?? _dept;
+                                      _kitchen = _dept == 'Kitchen / Dining' ? true : _kitchen;
+                                    }),
+                                  ),
                           ),
                           SizedBox(
                             width: 260,

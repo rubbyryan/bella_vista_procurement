@@ -5,15 +5,14 @@ import 'package:go_router/go_router.dart';
 import '../../core/api.dart';
 import '../../core/models.dart';
 import '../../core/state.dart';
+import '../../core/user_store.dart';
 import '../../core/widgets.dart';
 
-<<<<<<< HEAD
 enum AuthMode { login, register }
 
-=======
-/// The backend has no login yet, so people say who they are and in which role.
-/// The name is sent to the backend as the actor (issuedBy, approver, ...).
->>>>>>> 644b51d7db41bc6a7eda86fbababccd98d16d8fb
+/// Sign in / register. Accounts are in-memory demo accounts (see
+/// core/user_store.dart); no backend call is made for them. The server address
+/// below is only used by the pages that already talk to the backend.
 class AuthPage extends ConsumerStatefulWidget {
   const AuthPage({super.key});
   @override
@@ -22,59 +21,36 @@ class AuthPage extends ConsumerStatefulWidget {
 
 class _AuthPageState extends ConsumerState<AuthPage> {
   final _form = GlobalKey<FormState>();
-<<<<<<< HEAD
   final _id = TextEditingController(); // email / username on sign in, email on register
   final _pw = TextEditingController();
   final _first = TextEditingController();
   final _last = TextEditingController();
   final _phone = TextEditingController();
   final _confirm = TextEditingController();
-  bool _show = false, _remember = false, _policy = false, _busy = false;
+  late final _server = TextEditingController(text: ref.read(apiBaseProvider));
+
+  AuthMode _mode = AuthMode.login;
+  bool _showPw = false;
   String? _error;
   String? _info;
+  String? _serverStatus;
+  bool _serverOk = false, _testing = false;
 
   @override
   void dispose() {
-    for (final c in [_id, _pw, _first, _last, _phone, _confirm]) {
+    for (final c in [_id, _pw, _first, _last, _phone, _confirm, _server]) {
       c.dispose();
     }
-=======
-  late final _name = TextEditingController(text: ref.read(prefsProvider).getString('user_name') ?? '');
-  late final _server = TextEditingController(text: ref.read(apiBaseProvider));
-  Role _role = Role.requester;
-  String? _status;
-  bool _ok = false, _testing = false;
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _server.dispose();
->>>>>>> 644b51d7db41bc6a7eda86fbababccd98d16d8fb
     super.dispose();
   }
 
-  Future<void> _test() async {
-    setState(() {
-      _testing = true;
-      _status = null;
-    });
-    try {
-      final d = await ApiClient(_server.text).get('/departments');
-      setState(() {
-        _ok = true;
-        _status = 'Connected. ${(d as List).length} item departments found.';
+  void _switch(AuthMode m) => setState(() {
+        _mode = m;
+        _error = null;
+        _info = null;
+        _form.currentState?.reset();
       });
-    } catch (e) {
-      setState(() {
-        _ok = false;
-        _status = '$e';
-      });
-    } finally {
-      if (mounted) setState(() => _testing = false);
-    }
-  }
 
-<<<<<<< HEAD
   String? _required(String? v) => (v == null || v.trim().isEmpty) ? 'Required' : null;
 
   String? _emailRule(String? v) {
@@ -94,26 +70,30 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     return null;
   }
 
+  // Same rule as the backend: 8+ characters with upper, lower and a number.
+  String? _passwordRule(String? v) {
+    final s = v ?? '';
+    if (s.isEmpty) return 'Required';
+    if (!RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,100}$').hasMatch(s)) {
+      return 'Use 8+ characters with upper, lower case and a number';
+    }
+    return null;
+  }
+
   void _submit() {
-    setState(() {
-      _error = null;
-      _info = null;
-    });
     if (!_form.currentState!.validate()) return;
-    final store = ref.read(storeProvider);
+    final users = ref.read(userStoreProvider);
     if (_mode == AuthMode.login) {
-      final err = store.login(_id.text, _pw.text);
-      if (err != null) {
-        setState(() => _error = err);
-      } else {
-        context.go('/app/dashboard');
-      }
-    } else {
-      if (!_policy) {
-        setState(() => _error = 'Please accept the school IT use policy.');
+      final r = users.login(_id.text, _pw.text);
+      if (r.error != null) {
+        setState(() => _error = r.error);
         return;
       }
-      final err = store.register(
+      ref.read(apiBaseProvider.notifier).set(_server.text);
+      ref.read(sessionProvider.notifier).login(r.user!.name, r.user!.role, department: r.user!.department);
+      context.go('/app/dashboard');
+    } else {
+      final err = users.register(
         firstName: _first.text,
         lastName: _last.text,
         email: _id.text,
@@ -122,35 +102,45 @@ class _AuthPageState extends ConsumerState<AuthPage> {
       );
       if (err != null) {
         setState(() => _error = err);
-      } else {
-        setState(() {
-          _mode = AuthMode.login;
-          _info = 'Registration received. Your account stays inactive until the System Administrator assigns your role and department and activates it.';
-          _pw.clear();
-          _confirm.clear();
-        });
+        return;
       }
+      setState(() {
+        _mode = AuthMode.login;
+        _error = null;
+        _info = 'Registration received. Your account stays inactive until the System Administrator '
+            'assigns your role and department and activates it.';
+        _pw.clear();
+        _confirm.clear();
+      });
     }
   }
 
-  void _demo(AppUser u) {
+  Future<void> _testServer() async {
     setState(() {
-      _mode = AuthMode.login;
-      _id.text = u.email;
-      _pw.text = kDemoPassword;
-      _error = null;
+      _testing = true;
+      _serverStatus = null;
     });
-=======
-  void _go() {
-    if (!_form.currentState!.validate()) return;
-    ref.read(apiBaseProvider.notifier).set(_server.text);
-    ref.read(sessionProvider.notifier).login(_name.text, _role);
-    context.go('/app/dashboard');
->>>>>>> 644b51d7db41bc6a7eda86fbababccd98d16d8fb
+    try {
+      final d = await ApiClient(_server.text).get('/departments');
+      setState(() {
+        _serverOk = true;
+        _serverStatus = 'Connected. ${(d as List).length} item departments found.';
+      });
+    } catch (e) {
+      setState(() {
+        _serverOk = false;
+        _serverStatus = '$e';
+      });
+    } finally {
+      if (mounted) setState(() => _testing = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final login = _mode == AuthMode.login;
+    final demo = ref.watch(userStoreProvider).users.where((u) => u.active && !u.accountLocked).toList();
+
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -169,50 +159,168 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                     return Form(
                       key: _form,
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('Welcome', style: t.textTheme.headlineMedium),
+                        Text(login ? 'Welcome back' : 'Create your account', style: t.textTheme.headlineMedium),
                         const SizedBox(height: 4),
-                        const Text('Say who you are. Your name is recorded on every action you take.'),
+                        Text(login
+                            ? 'Sign in to manage requisitions'
+                            : 'Register to request access to the procurement portal'),
                         const SizedBox(height: 16),
+                        if (_info != null) ...[
+                          Text(_info!, style: TextStyle(color: t.colorScheme.tertiary)),
+                          const SizedBox(height: 12),
+                        ],
+                        if (!login) ...[
+                          LayoutBuilder(builder: (context, box) {
+                            final first = TextFormField(
+                              controller: _first,
+                              textCapitalization: TextCapitalization.words,
+                              decoration: const InputDecoration(labelText: 'First name'),
+                              validator: _required,
+                            );
+                            final last = TextFormField(
+                              controller: _last,
+                              textCapitalization: TextCapitalization.words,
+                              decoration: const InputDecoration(labelText: 'Surname'),
+                              validator: _required,
+                            );
+                            if (box.maxWidth < 380) {
+                              return Column(children: [first, const SizedBox(height: 12), last]);
+                            }
+                            return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Expanded(child: first),
+                              const SizedBox(width: 12),
+                              Expanded(child: last),
+                            ]);
+                          }),
+                          const SizedBox(height: 12),
+                        ],
                         TextFormField(
-                          controller: _name,
-                          decoration: const InputDecoration(
-                              labelText: 'Your full name', prefixIcon: Icon(Icons.person_outline_rounded)),
-                          validator: (v) => (v == null || v.trim().length < 3) ? 'Enter your full name' : null,
+                          controller: _id,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: InputDecoration(
+                            labelText: login ? 'Email or username' : 'Email address',
+                            prefixIcon: const Icon(Icons.mail_outline_rounded),
+                          ),
+                          validator: login ? _required : _emailRule,
                         ),
                         const SizedBox(height: 12),
-                        DropdownButtonFormField<Role>(
-                          value: _role,
-                          decoration: const InputDecoration(labelText: 'Your role'),
-                          items: [for (final r in Role.values) DropdownMenuItem(value: r, child: Text(r.label))],
-                          onChanged: (v) => setState(() => _role = v ?? _role),
-                        ),
-                        const SizedBox(height: 12),
+                        if (!login) ...[
+                          TextFormField(
+                            controller: _phone,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              labelText: 'Phone number',
+                              hintText: '+263 77 123 4567',
+                              prefixIcon: Icon(Icons.phone_outlined),
+                            ),
+                            validator: _phoneRule,
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         TextFormField(
-                          controller: _server,
-                          decoration: const InputDecoration(
-                              labelText: 'Server address', prefixIcon: Icon(Icons.dns_rounded)),
-                          validator: (v) =>
-                              (v == null || !v.trim().startsWith('http')) ? 'Start with http:// or https://' : null,
+                          controller: _pw,
+                          obscureText: !_showPw,
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            prefixIcon: const Icon(Icons.lock_outline_rounded),
+                            suffixIcon: IconButton(
+                              tooltip: _showPw ? 'Hide password' : 'Show password',
+                              onPressed: () => setState(() => _showPw = !_showPw),
+                              icon: Icon(_showPw ? Icons.visibility_off_rounded : Icons.visibility_rounded),
+                            ),
+                          ),
+                          validator: login ? _required : _passwordRule,
+                          onFieldSubmitted: (_) {
+                            if (login) _submit();
+                          },
                         ),
-                        const SizedBox(height: 8),
-                        Row(children: [
-                          OutlinedButton.icon(
-                            onPressed: _testing ? null : _test,
-                            icon: const Icon(Icons.wifi_tethering_rounded),
-                            label: Text(_testing ? 'Testing...' : 'Test connection'),
+                        if (!login) ...[
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _confirm,
+                            obscureText: !_showPw,
+                            decoration: const InputDecoration(
+                              labelText: 'Confirm password',
+                              prefixIcon: Icon(Icons.lock_outline_rounded),
+                            ),
+                            validator: (v) => (v ?? '') != _pw.text ? 'Passwords do not match' : null,
                           ),
-                        ]),
-                        if (_status != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(_status!,
-                                style: TextStyle(color: _ok ? t.colorScheme.tertiary : t.colorScheme.error)),
-                          ),
+                        ],
+                        if (_error != null) ...[
+                          const SizedBox(height: 12),
+                          Text(_error!, style: TextStyle(color: t.colorScheme.error)),
+                        ],
                         const SizedBox(height: 16),
                         SizedBox(
                           width: double.infinity,
-                          child: FilledButton(style: ctaStyle(c), onPressed: _go, child: const Text('Continue')),
+                          child: FilledButton(
+                            style: ctaStyle(c),
+                            onPressed: _submit,
+                            child: Text(login ? 'Sign in' : 'Register'),
+                          ),
                         ),
+                        const SizedBox(height: 8),
+                        Center(
+                          child: TextButton(
+                            onPressed: () => _switch(login ? AuthMode.register : AuthMode.login),
+                            child: Text(login ? 'New here? Register' : 'Already registered? Sign in'),
+                          ),
+                        ),
+                        Center(
+                          child: Text(
+                            login
+                                ? 'Need help? Contact the System Administrator'
+                                : 'Accounts are activated by the System Administrator',
+                            style: t.textTheme.labelMedium,
+                          ),
+                        ),
+                        if (login) ...[
+                          const Divider(height: 32),
+                          Text('Demo accounts (password $kDemoPassword)', style: t.textTheme.labelLarge),
+                          const SizedBox(height: 8),
+                          Wrap(spacing: 8, runSpacing: 8, children: [
+                            for (final u in demo)
+                              ActionChip(
+                                label: Text(u.role.label),
+                                onPressed: () => setState(() {
+                                  _id.text = u.email;
+                                  _pw.text = kDemoPassword;
+                                  _error = null;
+                                }),
+                              ),
+                          ]),
+                          const SizedBox(height: 8),
+                          ExpansionTile(
+                            tilePadding: EdgeInsets.zero,
+                            title: const Text('Server address'),
+                            subtitle: const Text('Used by departments, requisitions and stock'),
+                            children: [
+                              TextFormField(
+                                controller: _server,
+                                decoration: const InputDecoration(
+                                    labelText: 'Server address', prefixIcon: Icon(Icons.dns_rounded)),
+                                validator: (v) => (v == null || !v.trim().startsWith('http'))
+                                    ? 'Start with http:// or https://'
+                                    : null,
+                              ),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: OutlinedButton.icon(
+                                  onPressed: _testing ? null : _testServer,
+                                  icon: const Icon(Icons.wifi_tethering_rounded),
+                                  label: Text(_testing ? 'Testing...' : 'Test connection'),
+                                ),
+                              ),
+                              if (_serverStatus != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 8),
+                                  child: Text(_serverStatus!,
+                                      style: TextStyle(color: _serverOk ? t.colorScheme.tertiary : t.colorScheme.error)),
+                                ),
+                            ],
+                          ),
+                        ],
                       ]),
                     );
                   }),
@@ -224,176 +332,4 @@ class _AuthPageState extends ConsumerState<AuthPage> {
       ),
     );
   }
-<<<<<<< HEAD
-
-  Widget _formBody(BuildContext context) {
-    final store = ref.watch(storeProvider);
-    final login = _mode == AuthMode.login;
-    return Builder(builder: (c) {
-      final t = Theme.of(c);
-      return Form(
-        key: _form,
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(login ? 'Welcome back' : 'Create your account', style: t.textTheme.headlineMedium),
-          const SizedBox(height: 4),
-          Text(login ? 'Sign in to manage requisitions' : 'Register to request access to the procurement portal'),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: SegmentedButton<AuthMode>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(value: AuthMode.login, label: Text('Sign in')),
-                ButtonSegment(value: AuthMode.register, label: Text('Register')),
-              ],
-              selected: {_mode},
-              onSelectionChanged: (s) => setState(() {
-                _mode = s.first;
-                _error = null;
-                _info = null;
-              }),
-            ),
-          ),
-          const SizedBox(height: 16),
-          if (_info != null) _banner(c, _info!, false),
-          if (_error != null) _banner(c, _error!, true),
-          if (!login) ...[
-            LayoutBuilder(builder: (context, box) {
-              final first = TextFormField(
-                controller: _first,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(labelText: 'First name'),
-                validator: _required,
-              );
-              final last = TextFormField(
-                controller: _last,
-                textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(labelText: 'Surname'),
-                validator: _required,
-              );
-              if (box.maxWidth < 380) {
-                return Column(children: [first, const SizedBox(height: 12), last]);
-              }
-              return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Expanded(child: first),
-                const SizedBox(width: 12),
-                Expanded(child: last),
-              ]);
-            }),
-            const SizedBox(height: 12),
-          ],
-          TextFormField(
-            controller: _id,
-            keyboardType: TextInputType.emailAddress,
-            decoration: InputDecoration(
-              labelText: login ? 'Email or username' : 'Email address',
-              prefixIcon: const Icon(Icons.mail_outline_rounded),
-            ),
-            validator: login ? _required : _emailRule,
-            onFieldSubmitted: (_) => _submit(),
-          ),
-          const SizedBox(height: 12),
-          if (!login) ...[
-            TextFormField(
-              controller: _phone,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Phone number',
-                hintText: '+263 77 123 4567',
-                prefixIcon: Icon(Icons.phone_outlined),
-              ),
-              validator: _phoneRule,
-            ),
-            const SizedBox(height: 12),
-          ],
-          TextFormField(
-            controller: _pw,
-            obscureText: !_show,
-            decoration: InputDecoration(
-              labelText: 'Password',
-              prefixIcon: const Icon(Icons.lock_outline_rounded),
-              suffixIcon: IconButton(
-                icon: Icon(_show ? Icons.visibility_off_rounded : Icons.visibility_rounded),
-                onPressed: () => setState(() => _show = !_show),
-              ),
-            ),
-            validator: login ? (v) => (v == null || v.isEmpty) ? 'Required' : null : _pwRule,
-            onFieldSubmitted: (_) => _submit(),
-          ),
-          const SizedBox(height: 12),
-          if (!login) ...[
-            TextFormField(
-              controller: _confirm,
-              obscureText: !_show,
-              decoration: const InputDecoration(labelText: 'Confirm password'),
-              validator: (v) => v != _pw.text ? 'Passwords do not match' : null,
-            ),
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              controlAffinity: ListTileControlAffinity.leading,
-              value: _policy,
-              onChanged: (v) => setState(() => _policy = v ?? false),
-              title: const Text('I accept the school IT use policy'),
-            ),
-          ] else
-            Row(children: [
-              Expanded(
-                child: CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  value: _remember,
-                  onChanged: (v) => setState(() => _remember = v ?? false),
-                  title: const Text('Remember me'),
-                ),
-              ),
-              TextButton(
-                onPressed: () => snack(context, 'Demo: a reset link would be emailed here.'),
-                child: const Text('Forgot password?'),
-              ),
-            ]),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              style: login ? null : ctaStyle(c),
-              onPressed: _busy ? null : _submit,
-              child: Text(login ? 'Sign in' : 'Register'),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: Text(
-              login ? 'Need help? Contact the System Administrator' : 'Accounts are activated by the System Administrator',
-              style: t.textTheme.labelSmall,
-            ),
-          ),
-          if (login) ...[
-            const Divider(height: 32),
-            Text('Demo accounts (password $kDemoPassword)', style: t.textTheme.labelLarge),
-            const SizedBox(height: 8),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final u in store.users.where((u) => u.active))
-                ActionChip(label: Text(u.role.label), onPressed: () => _demo(u)),
-            ]),
-          ],
-        ]),
-      );
-    });
-  }
-
-  Widget _banner(BuildContext c, String msg, bool isError) {
-    final s = Theme.of(c).colorScheme;
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isError ? s.errorContainer : s.primaryContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(msg, style: TextStyle(color: isError ? s.onErrorContainer : s.onPrimaryContainer)),
-    );
-  }
-=======
->>>>>>> 644b51d7db41bc6a7eda86fbababccd98d16d8fb
 }

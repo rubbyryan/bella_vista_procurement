@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models.dart';
 import '../../core/state.dart';
+import '../../core/theme/bv_theme.dart';
 import '../../core/widgets.dart';
 
 /// Item departments, categories and items (the catalogue requisitions pick from).
@@ -72,7 +73,7 @@ class CataloguePage extends ConsumerWidget {
                 await act(
                     context,
                     ref,
-                    () => repo.createItem(
+                        () => repo.createItem(
                         code: v['code']!,
                         name: v['name']!,
                         description: v['desc']!,
@@ -92,14 +93,14 @@ class CataloguePage extends ConsumerWidget {
             data: (l) => l.isEmpty
                 ? const Text('No items yet. Add your first item.')
                 : Column(children: [
-                    for (final i in l)
-                      ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text('${i.label} (${i.uom})'),
-                        subtitle: Text('${i.departmentName} > ${i.categoryName} | min ${qty(i.minLevel)} | reorder ${qty(i.reorderLevel)}'),
-                      ),
-                  ]),
+              for (final i in l)
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('${i.label} (${i.uom})'),
+                  subtitle: Text('${i.departmentName} > ${i.categoryName} | min ${qty(i.minLevel)} | reorder ${qty(i.reorderLevel)}'),
+                ),
+            ]),
           ),
         ),
       ],
@@ -128,32 +129,30 @@ class _CategoryDialogState extends State<_CategoryDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('New category'),
-        content: BVSurface(
-          child: SizedBox(
-            width: 380,
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              DropdownButtonFormField<int>(
-                value: _dept,
-                decoration: const InputDecoration(labelText: 'Department'),
-                items: [for (final d in widget.depts) DropdownMenuItem(value: d.id, child: Text(d.name))],
-                onChanged: (v) => setState(() => _dept = v ?? _dept),
-              ),
-              const SizedBox(height: 12),
-              TextField(controller: _name, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Name *')),
-              const SizedBox(height: 12),
-              TextField(controller: _desc, decoration: const InputDecoration(labelText: 'Description')),
-            ]),
-          ),
+    title: const Text('New category'),
+    content: SizedBox(
+      width: 380,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        DropdownButtonFormField<int>(
+          value: _dept,
+          decoration: const InputDecoration(labelText: 'Department'),
+          items: [for (final d in widget.depts) DropdownMenuItem(value: d.id, child: Text(d.name))],
+          onChanged: (v) => setState(() => _dept = v ?? _dept),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: _name.text.trim().isEmpty ? null : () => Navigator.pop(context, (_name.text.trim(), _desc.text.trim(), _dept)),
-            child: const Text('Add'),
-          ),
-        ],
-      );
+        const SizedBox(height: 12),
+        TextField(controller: _name, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Name *')),
+        const SizedBox(height: 12),
+        TextField(controller: _desc, decoration: const InputDecoration(labelText: 'Description')),
+      ]),
+    ),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+      FilledButton(
+        onPressed: _name.text.trim().isEmpty ? null : () => Navigator.pop(context, (_name.text.trim(), _desc.text.trim(), _dept)),
+        child: const Text('Add'),
+      ),
+    ],
+  );
 }
 
 class _ItemDialog extends StatefulWidget {
@@ -185,34 +184,32 @@ class _ItemDialogState extends State<_ItemDialog> {
     final ok = _code.text.trim().isNotEmpty && _name.text.trim().isNotEmpty && _uom.text.trim().isNotEmpty;
     return AlertDialog(
       title: const Text('New item'),
-      content: BVSurface(
-        child: SizedBox(
-          width: 400,
-          child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              DropdownButtonFormField<int>(
-                value: _cat,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Category'),
-                items: [for (final c in widget.cats) DropdownMenuItem(value: c.id, child: Text('${c.name} (${c.departmentName})'))],
-                onChanged: (v) => setState(() => _cat = v ?? _cat),
-              ),
-              const SizedBox(height: 10),
-              TextField(controller: _code, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Item code *')),
-              const SizedBox(height: 10),
-              TextField(controller: _name, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Name *')),
-              const SizedBox(height: 10),
-              TextField(controller: _desc, decoration: const InputDecoration(labelText: 'Description')),
-              const SizedBox(height: 10),
-              TextField(controller: _uom, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Unit of measure *')),
-              const SizedBox(height: 10),
-              Row(children: [
-                Expanded(child: TextField(controller: _min, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Minimum level'))),
-                const SizedBox(width: 8),
-                Expanded(child: TextField(controller: _reorder, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Reorder level'))),
-              ]),
+      content: SizedBox(
+        width: 400,
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            DropdownButtonFormField<int>(
+              value: _cat,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Category'),
+              items: [for (final c in widget.cats) DropdownMenuItem(value: c.id, child: Text('${c.name} (${c.departmentName})'))],
+              onChanged: (v) => setState(() => _cat = v ?? _cat),
+            ),
+            const SizedBox(height: 10),
+            TextField(controller: _code, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Item code *')),
+            const SizedBox(height: 10),
+            TextField(controller: _name, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Name *')),
+            const SizedBox(height: 10),
+            TextField(controller: _desc, decoration: const InputDecoration(labelText: 'Description')),
+            const SizedBox(height: 10),
+            TextField(controller: _uom, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Unit of measure *')),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(child: TextField(controller: _min, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Minimum level'))),
+              const SizedBox(width: 8),
+              Expanded(child: TextField(controller: _reorder, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Reorder level'))),
             ]),
-          ),
+          ]),
         ),
       ),
       actions: [
@@ -221,14 +218,14 @@ class _ItemDialogState extends State<_ItemDialog> {
           onPressed: !ok
               ? null
               : () => Navigator.pop(context, {
-                    'cat': '$_cat',
-                    'code': _code.text.trim(),
-                    'name': _name.text.trim(),
-                    'desc': _desc.text.trim(),
-                    'uom': _uom.text.trim(),
-                    'min': '${double.tryParse(_min.text) ?? 0}',
-                    'reorder': '${double.tryParse(_reorder.text) ?? 0}',
-                  }),
+            'cat': '$_cat',
+            'code': _code.text.trim(),
+            'name': _name.text.trim(),
+            'desc': _desc.text.trim(),
+            'uom': _uom.text.trim(),
+            'min': '${double.tryParse(_min.text) ?? 0}',
+            'reorder': '${double.tryParse(_reorder.text) ?? 0}',
+          }),
           child: const Text('Add'),
         ),
       ],

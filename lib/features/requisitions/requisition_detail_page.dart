@@ -6,6 +6,7 @@ import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/bv_theme.dart';
 import '../../core/widgets.dart';
+import '../issuing/issue_stock_dialog.dart';
 
 /// Item requisition. Backend flow (ItemRequisitionService):
 /// NEW > STORES_REVIEW > PENDING_HEAD_APPROVAL > PENDING_OM_APPROVAL > READY_FOR_ISSUE > RESOLVED.
@@ -37,12 +38,12 @@ class _RequisitionDetailPageState extends ConsumerState<RequisitionDetailPage> {
 
   List<StepInfo> _steps(Requisition r) {
     final s = r.status;
-    StepState st(int idx, int cur) => idx < cur ? StepState.done : (idx == cur ? StepState.current : StepState.todo);
+    BVStepState st(int idx, int cur) => idx < cur ? BVStepState.done : (idx == cur ? BVStepState.current : BVStepState.todo);
     if (s == 'REJECTED') {
       final at = r.omBy != null ? 2 : 1;
       return [
         for (var i = 0; i < 4; i++)
-          StepInfo(['Stores', 'Head', 'OM', 'Issue'][i], i < at ? StepState.done : (i == at ? StepState.rejected : StepState.todo)),
+          StepInfo(['Stores', 'Head', 'OM', 'Issue'][i], i < at ? BVStepState.done : (i == at ? BVStepState.rejected : BVStepState.todo)),
       ];
     }
     final cur = switch (s) {
@@ -59,8 +60,8 @@ class _RequisitionDetailPageState extends ConsumerState<RequisitionDetailPage> {
   Widget build(BuildContext context) {
     final me = ref.watch(sessionProvider);
     if (me == null) return const SizedBox();
-    final reqs = ref.watch(requisitionsP);
-    final issues = ref.watch(issuesP).valueOrNull ?? <StockIssue>[];
+    final one = ref.watch(requisitionByIdP(widget.id));
+    final issues = ref.watch(issuesByRequisitionP(widget.id)).valueOrNull ?? <StockIssue>[]; // GET /stock-issues/requisition/{id}
     final prs = ref.watch(prsP).valueOrNull ?? <PurchaseRequest>[];
     final bal = ref.watch(balancesP).valueOrNull ?? <Balance>[];
 
@@ -75,13 +76,14 @@ class _RequisitionDetailPageState extends ConsumerState<RequisitionDetailPage> {
         ),
       ],
       children: [
-        AsyncBody<List<Requisition>>(
-          value: reqs,
-          onRetry: () => ref.invalidate(requisitionsP),
-          builder: (all) {
-            final r = all.where((x) => x.id == widget.id).firstOrNull;
-            if (r == null) return const Panel(child: Text('Requisition not found.'));
-            return _body(me, r, issues.where((i) => i.requisitionId == r.id).toList(),
+        AsyncBody<Requisition>(
+          value: one,
+          onRetry: () => ref.invalidate(requisitionByIdP(widget.id)),
+          builder: (r) {
+            if (me.role == Role.requester && r.officer.trim().toLowerCase() != me.name.trim().toLowerCase()) {
+              return const Panel(child: Text('You can only view your own requisitions.'));
+            }
+            return _body(me, r, issues,
                 prs.where((p) => p.requisitionId == r.id).firstOrNull, onHandByItem(bal));
           },
         ),
@@ -96,10 +98,7 @@ class _RequisitionDetailPageState extends ConsumerState<RequisitionDetailPage> {
         issuedByLine[l.requisitionLineId] = (issuedByLine[l.requisitionLineId] ?? 0) + l.qty;
       }
     }
-    double remaining(ReqLine l) {
-      final cap = (l.recommended ?? 0) < l.quantity ? (l.recommended ?? 0) : l.quantity;
-      return cap - (issuedByLine[l.id] ?? 0);
-    }
+    double remaining(ReqLine l) => remainingToIssue(l, issuedByLine[l.id] ?? 0);
 
     final reviewing = r.status == 'NEW' || r.status == 'STORES_REVIEW';
     final canIssue = (r.status == 'READY_FOR_ISSUE' || r.status == 'PARTIALLY_ISSUED') &&
@@ -157,23 +156,27 @@ class _RequisitionDetailPageState extends ConsumerState<RequisitionDetailPage> {
       if (r.status == 'PENDING_HEAD_APPROVAL' && me.role == Role.head) ...[
         const SizedBox(height: 16),
         _decision('Headmaster decision', 'Approve & send to OM',
-            (c) => ref.read(repoProvider).headApprove(r.id, me.name, c),
-            (c) => ref.read(repoProvider).headReject(r.id, me.name, c)),
+                (c) => ref.read(repoProvider).headApprove(r.id, me.name, c),
+                (c) => ref.read(repoProvider).headReject(r.id, me.name, c)),
       ],
       if (r.status == 'PENDING_OM_APPROVAL' && me.role == Role.om) ...[
         const SizedBox(height: 16),
         _decision('Operations Manager decision', 'Approve for issue',
-            (c) => ref.read(repoProvider).omApprove(r.id, me.name, c),
-            (c) => ref.read(repoProvider).omReject(r.id, me.name, c)),
+                (c) => ref.read(repoProvider).omApprove(r.id, me.name, c),
+                (c) => ref.read(repoProvider).omReject(r.id, me.name, c)),
       ],
-      if (canIssue && me.role == Role.stores) ...[
+      if (me.role == Role.stores) ...[
         const SizedBox(height: 16),
         Panel(
           title: 'Issue from stock',
           child: Row(children: [
-            const Expanded(child: Text('Approved by the Headmaster and the Operations Manager. Issue the items and record who received them (issue note).')),
-            Builder(builder: (c) => FilledButton(
-                style: ctaStyle(c), onPressed: _busy ? null : () => _issue(me, r, remaining), child: const Text('Issue stock'))),
+            Expanded(child: Text(_issueNote(r, canIssue))),
+            // The button only works once the Headmaster and the Operations Manager have approved.
+            Builder(builder: (c) => FilledButton.icon(
+                style: ctaStyle(c),
+                onPressed: (_busy || !canIssue) ? null : () => _issue(me, r, issuedByLine),
+                icon: const Icon(Icons.outbox_rounded),
+                label: const Text('Issue stock'))),
           ]),
         ),
       ],
@@ -183,16 +186,16 @@ class _RequisitionDetailPageState extends ConsumerState<RequisitionDetailPage> {
           title: 'Purchase request (items not in stock)',
           child: pr != null
               ? Row(children: [
-                  Expanded(child: Text('${pr.number} | ${money(pr.total)}')),
-                  StatePill(pr.status),
-                  TextButton(onPressed: () => context.go('/app/purchase-requests/${pr.id}'), child: const Text('Open')),
-                ])
+            Expanded(child: Text('${pr.number} | ${money(pr.total)}')),
+            StatePill(pr.status),
+            TextButton(onPressed: () => context.go('/app/purchase-requests/${pr.id}'), child: const Text('Open')),
+          ])
               : Row(children: [
-                  const Expanded(child: Text('Some items are not in stock. The Stores Controller raises a purchase request that references this requisition.')),
-                  if (me.role == Role.stores)
-                    Builder(builder: (c) => FilledButton(
-                        style: ctaStyle(c), onPressed: _busy ? null : () => _raisePr(me, r), child: const Text('Raise purchase request'))),
-                ]),
+            const Expanded(child: Text('Some items are not in stock. The Stores Controller raises a purchase request that references this requisition.')),
+            if (me.role == Role.stores)
+              Builder(builder: (c) => FilledButton(
+                  style: ctaStyle(c), onPressed: _busy ? null : () => _raisePr(me, r), child: const Text('Raise purchase request'))),
+          ]),
         ),
       ],
       if (issues.isNotEmpty) ...[
@@ -256,12 +259,12 @@ class _RequisitionDetailPageState extends ConsumerState<RequisitionDetailPage> {
               onPressed: _busy
                   ? null
                   : () async {
-                      final v = await showCommentDialog(context,
-                          title: 'Reject requisition',
-                          message: 'Tell the requester why. A comment is required.',
-                          quickReasons: const ['Budget not available', 'Duplicate request', 'Need more information', 'Not a priority now']);
-                      if (v != null && mounted) await _run(() => reject(v), 'Rejected.');
-                    },
+                final v = await showCommentDialog(context,
+                    title: 'Reject requisition',
+                    message: 'Tell the requester why. A comment is required.',
+                    quickReasons: const ['Budget not available', 'Duplicate request', 'Need more information', 'Not a priority now']);
+                if (v != null && mounted) await _run(() => reject(v), 'Rejected.');
+              },
               child: const Text('Reject'))),
           Builder(builder: (c) => FilledButton(
               style: ctaStyle(c),
@@ -272,17 +275,32 @@ class _RequisitionDetailPageState extends ConsumerState<RequisitionDetailPage> {
     );
   }
 
-  Future<void> _issue(Session me, Requisition r, double Function(ReqLine) remaining) async {
-    final locs = await ref.read(locationsP.future);
-    if (!mounted) return;
-    if (locs.isEmpty) {
-      snack(context, 'No stock locations exist yet.');
+  /// Why the issue button is on or off.
+  String _issueNote(Requisition r, bool canIssue) {
+    if (canIssue) {
+      return 'Approved by the Headmaster and the Operations Manager. Issue the items and record who received them (issue note).';
+    }
+    return switch (r.status) {
+      'NEW' || 'STORES_REVIEW' => 'Review the stock and submit the requisition for approval first.',
+      'PENDING_HEAD_APPROVAL' => 'Waiting for the Headmaster to approve. Stock can only be issued after approval.',
+      'PENDING_OM_APPROVAL' => 'Waiting for the Operations Manager to approve. Stock can only be issued after approval.',
+      'REJECTED' => 'This requisition was rejected, so nothing can be issued.',
+      'RESOLVED' => 'Everything on this requisition has been issued.',
+      'READY_FOR_ISSUE' || 'PARTIALLY_ISSUED' => 'Nothing is left to issue on this requisition.',
+      _ => 'Stock cannot be issued for this requisition.',
+    };
+  }
+
+  Future<void> _issue(Session me, Requisition r, Map<int, double> issuedByLine) async {
+    final List<Balance> balances;
+    try {
+      balances = await ref.read(balancesP.future);
+    } catch (e) {
+      if (mounted) snack(context, 'Could not load stock balances: $e');
       return;
     }
-    final res = await showDialog<_IssueResult>(
-      context: context,
-      builder: (_) => _IssueDialog(lines: [for (final l in r.lines) if (remaining(l) > 0) (l, remaining(l))], locations: locs, me: me.name),
-    );
+    if (!mounted) return;
+    final res = await showIssueStockDialog(context, requisition: r, issuedByLine: issuedByLine, balances: balances);
     if (res == null || !mounted) return;
     await _run(() => ref.read(repoProvider).issueStock(r.id, me.name, res.receivedBy, res.remarks, res.lines),
         'Stock issued. The issue note is listed below.');
@@ -301,7 +319,7 @@ class _RequisitionDetailPageState extends ConsumerState<RequisitionDetailPage> {
     );
     if (res == null || !mounted) return;
     await _run(
-        () => ref.read(repoProvider).createPurchaseRequest(
+            () => ref.read(repoProvider).createPurchaseRequest(
             requisitionId: r.id, by: me.name, justification: res.justification, items: res.items),
         'Purchase request raised. The Operations Manager now submits it for directorate approval.');
   }
@@ -436,115 +454,6 @@ class _ReviewPanelState extends ConsumerState<_ReviewPanel> {
 }
 
 // ---------------------------------------------------------------------------
-// Issue stock dialog
-// ---------------------------------------------------------------------------
-class _IssueResult {
-  _IssueResult(this.receivedBy, this.remarks, this.lines);
-  final String receivedBy;
-  final String remarks;
-  final List<Map<String, dynamic>> lines;
-}
-
-class _IssueDialog extends StatefulWidget {
-  const _IssueDialog({required this.lines, required this.locations, required this.me});
-  final List<(ReqLine, double)> lines;
-  final List<Location> locations;
-  final String me;
-  @override
-  State<_IssueDialog> createState() => _IssueDialogState();
-}
-
-class _IssueDialogState extends State<_IssueDialog> {
-  late final Map<int, TextEditingController> _qty = {
-    for (final e in widget.lines) e.$1.id: TextEditingController(text: qty(e.$2)),
-  };
-  late final Map<int, int> _loc = {for (final e in widget.lines) e.$1.id: widget.locations.first.id};
-  final _received = TextEditingController();
-  final _remarks = TextEditingController();
-
-  @override
-  void dispose() {
-    for (final c in _qty.values) {
-      c.dispose();
-    }
-    _received.dispose();
-    _remarks.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ok = _received.text.trim().isNotEmpty;
-    return AlertDialog(
-      title: const Text('Issue stock'),
-      content: BVSurface(
-        child: SizedBox(
-          width: 460,
-          child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              for (final e in widget.lines) ...[
-                Text('${e.$1.item.label} (up to ${qty(e.$2)} ${e.$1.uom})', style: const TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
-                Row(children: [
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      value: _loc[e.$1.id],
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'From location'),
-                      items: [for (final l in widget.locations) DropdownMenuItem(value: l.id, child: Text(l.name))],
-                      onChanged: (v) => setState(() => _loc[e.$1.id] = v ?? _loc[e.$1.id]!),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 100,
-                    child: TextField(
-                      controller: _qty[e.$1.id],
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(labelText: 'Quantity'),
-                    ),
-                  ),
-                ]),
-                const SizedBox(height: 12),
-              ],
-              TextField(
-                controller: _received,
-                onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(labelText: 'Received by (who collected the items) *'),
-              ),
-              const SizedBox(height: 12),
-              TextField(controller: _remarks, decoration: const InputDecoration(labelText: 'Remarks')),
-            ]),
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        FilledButton(
-          onPressed: !ok
-              ? null
-              : () {
-                  final lines = <Map<String, dynamic>>[];
-                  for (final e in widget.lines) {
-                    final q = double.tryParse(_qty[e.$1.id]!.text) ?? 0;
-                    if (q > 0) {
-                      lines.add({
-                        'requisitionLineId': e.$1.id,
-                        'stockLocationId': _loc[e.$1.id],
-                        'quantityIssued': q,
-                      });
-                    }
-                  }
-                  Navigator.pop(context, _IssueResult(_received.text.trim(), _remarks.text.trim(), lines));
-                },
-          child: const Text('Issue'),
-        ),
-      ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Purchase request dialog (shortage lines only)
 // ---------------------------------------------------------------------------
 class _PrResult {
@@ -583,27 +492,25 @@ class _PrDialogState extends State<_PrDialog> {
     }
     return AlertDialog(
       title: const Text('Raise purchase request'),
-      content: BVSurface(
-        child: SizedBox(
-          width: 460,
-          child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              for (final e in widget.short) ...[
-                Text('${e.$1.label}: buy ${e.$2} ${e.$1.uom}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: _price[e.$1.id],
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(labelText: 'Estimated unit price (USD) *'),
-                ),
-                const SizedBox(height: 12),
-              ],
-              TextField(controller: _just, minLines: 2, maxLines: 4, decoration: const InputDecoration(labelText: 'Justification')),
-              const SizedBox(height: 8),
-              Text('Estimated total ${money(total)}${total >= 1000 ? ' (RA approval needed at USD 1,000 or more)' : ''}'),
-            ]),
-          ),
+      content: SizedBox(
+        width: 460,
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            for (final e in widget.short) ...[
+              Text('${e.$1.label}: buy ${e.$2} ${e.$1.uom}', style: const TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _price[e.$1.id],
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(labelText: 'Estimated unit price (USD) *'),
+              ),
+              const SizedBox(height: 12),
+            ],
+            TextField(controller: _just, minLines: 2, maxLines: 4, decoration: const InputDecoration(labelText: 'Justification')),
+            const SizedBox(height: 8),
+            Text('Estimated total ${money(total)}${total >= 1000 ? ' (RA approval needed at USD 1,000 or more)' : ''}'),
+          ]),
         ),
       ),
       actions: [
@@ -612,11 +519,11 @@ class _PrDialogState extends State<_PrDialog> {
           onPressed: !ok
               ? null
               : () => Navigator.pop(
-                  context,
-                  _PrResult(_just.text.trim(), [
-                    for (final e in widget.short)
-                      {'itemId': e.$1.id, 'quantity': e.$2, 'estimatedUnitPrice': double.parse(_price[e.$1.id]!.text)}
-                  ])),
+              context,
+              _PrResult(_just.text.trim(), [
+                for (final e in widget.short)
+                  {'itemId': e.$1.id, 'quantity': e.$2, 'estimatedUnitPrice': double.parse(_price[e.$1.id]!.text)}
+              ])),
           child: const Text('Raise request'),
         ),
       ],

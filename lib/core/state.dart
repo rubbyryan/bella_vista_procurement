@@ -22,9 +22,10 @@ final apiBaseProvider = NotifierProvider<ApiBaseNotifier, String>(ApiBaseNotifie
 final apiProvider = Provider<ApiClient>((ref) => ApiClient(ref.watch(apiBaseProvider)));
 
 class Session {
-  const Session(this.name, this.role);
+  const Session(this.name, this.role, [this.department = '']);
   final String name;
   final Role role;
+  final String department; // assigned by the System Administrator (may be empty)
 }
 
 class SessionNotifier extends Notifier<Session?> {
@@ -35,20 +36,22 @@ class SessionNotifier extends Notifier<Session?> {
     final r = p.getString('user_role');
     if (n == null || r == null) return null;
     final role = Role.values.where((x) => x.name == r);
-    return role.isEmpty ? null : Session(n, role.first);
+    return role.isEmpty ? null : Session(n, role.first, p.getString('user_dept') ?? '');
   }
 
-  void login(String name, Role role) {
+  void login(String name, Role role, {String department = ''}) {
     final p = ref.read(prefsProvider);
     p.setString('user_name', name.trim());
     p.setString('user_role', role.name);
-    state = Session(name.trim(), role);
+    p.setString('user_dept', department.trim());
+    state = Session(name.trim(), role, department.trim());
   }
 
   void logout() {
     final p = ref.read(prefsProvider);
     p.remove('user_name');
     p.remove('user_role');
+    p.remove('user_dept');
     state = null;
   }
 }
@@ -69,11 +72,32 @@ class Repo {
   Future<List<Dept>> departments() async => _list(await api.get('/departments'), Dept.fromJson);
   Future<List<Category>> categories() async => _list(await api.get('/categories'), Category.fromJson);
   Future<List<Item>> items() async => _list(await api.get('/items'), Item.fromJson);
+  Future<Item> item(int id) async => Item.fromJson(Map<String, dynamic>.from(await api.get('/items/$id') as Map));
+  Future<List<Item>> itemsByCategory(int categoryId) async =>
+      _list(await api.get('/items/category/$categoryId'), Item.fromJson);
+  Future<List<Item>> itemsByDepartment(int departmentId) async =>
+      _list(await api.get('/items/department/$departmentId'), Item.fromJson);
   Future<List<Location>> locations() async => _list(await api.get('/stock-locations'), Location.fromJson);
+  Future<Location> location(int id) async =>
+      Location.fromJson(Map<String, dynamic>.from(await api.get('/stock-locations/$id') as Map));
+  Future<void> createLocation(String name, String description) =>
+      api.post('/stock-locations', body: {'name': name, 'description': description});
+  Future<void> updateLocation(int id, String name, String description) =>
+      api.put('/stock-locations/$id', body: {'name': name, 'description': description});
+  Future<void> deactivateLocation(int id) => api.patch('/stock-locations/$id/deactivate');
   Future<void> createDepartment(String name, String description) =>
       api.post('/departments', body: {'name': name, 'description': description});
+  Future<Dept> department(int id) async => Dept.fromJson(Map<String, dynamic>.from(await api.get('/departments/$id') as Map));
+  Future<void> updateDepartment(int id, String name, String description) =>
+      api.put('/departments/$id', body: {'name': name, 'description': description});
   Future<void> createCategory(String name, String description, int departmentId) =>
       api.post('/categories', body: {'name': name, 'description': description, 'departmentId': departmentId});
+  Future<Category> category(int id) async => Category.fromJson(Map<String, dynamic>.from(await api.get('/categories/$id') as Map));
+  Future<List<Category>> categoriesByDepartment(int departmentId) async =>
+      _list(await api.get('/categories/department/$departmentId'), Category.fromJson);
+  Future<void> updateCategory(int id, String name, String description, int departmentId) =>
+      api.put('/categories/$id', body: {'name': name, 'description': description, 'departmentId': departmentId});
+  Future<void> deactivateCategory(int id) => api.patch('/categories/$id/deactivate');
   Future<void> createItem({
     required String code,
     required String name,
@@ -95,6 +119,14 @@ class Repo {
 
   // stock
   Future<List<Balance>> balances() async => _list(await api.get('/stock-balances'), Balance.fromJson);
+  Future<Balance> balance(int id) async =>
+      Balance.fromJson(Map<String, dynamic>.from(await api.get('/stock-balances/$id') as Map));
+  Future<List<Balance>> balancesByLocation(int locationId) async =>
+      _list(await api.get('/stock-balances/location/$locationId'), Balance.fromJson);
+  Future<List<Balance>> balancesByItem(int itemId) async =>
+      _list(await api.get('/stock-balances/item/$itemId'), Balance.fromJson);
+  Future<Balance> balanceFor(int itemId, int locationId) async =>
+      Balance.fromJson(Map<String, dynamic>.from(await api.get('/stock-balances/item/$itemId/location/$locationId') as Map));
   Future<List<Movement>> movements() async => _list(await api.get('/stock-movements'), Movement.fromJson);
   Future<void> addToStock({
     required int itemId,
@@ -115,6 +147,8 @@ class Repo {
 
   // item requisitions
   Future<List<Requisition>> requisitions() async => _list(await api.get('/requisitions'), Requisition.fromJson);
+  Future<Requisition> requisition(int id) async =>
+      Requisition.fromJson(Map<String, dynamic>.from(await api.get('/requisitions/$id') as Map));
   Future<void> createRequisition({
     required String department,
     required String officer,
@@ -145,6 +179,12 @@ class Repo {
 
   // stock issues
   Future<List<StockIssue>> issues() async => _list(await api.get('/stock-issues'), StockIssue.fromJson);
+  Future<StockIssue> issue(int id) async =>
+      StockIssue.fromJson(Map<String, dynamic>.from(await api.get('/stock-issues/$id') as Map));
+  Future<StockIssue> issueByNumber(String number) async => StockIssue.fromJson(
+      Map<String, dynamic>.from(await api.get('/stock-issues/number/${Uri.encodeComponent(number.trim())}') as Map));
+  Future<List<StockIssue>> issuesForRequisition(int requisitionId) async =>
+      _list(await api.get('/stock-issues/requisition/$requisitionId'), StockIssue.fromJson);
   Future<void> issueStock(int requisitionId, String issuedBy, String receivedBy, String remarks,
           List<Map<String, dynamic>> lines) =>
       api.post('/stock-issues/requisition/$requisitionId',
@@ -201,11 +241,33 @@ final repoProvider = Provider<Repo>((ref) => Repo(ref.watch(apiProvider)));
 
 final departmentsP = FutureProvider.autoDispose<List<Dept>>((ref) => ref.watch(repoProvider).departments());
 final categoriesP = FutureProvider.autoDispose<List<Category>>((ref) => ref.watch(repoProvider).categories());
+final categoriesByDeptP = FutureProvider.autoDispose.family<List<Category>, int>(
+    (ref, departmentId) => ref.watch(repoProvider).categoriesByDepartment(departmentId));
+final itemsByCategoryP = FutureProvider.autoDispose.family<List<Item>, int>(
+    (ref, categoryId) => ref.watch(repoProvider).itemsByCategory(categoryId));
+final itemsByDeptP = FutureProvider.autoDispose.family<List<Item>, int>(
+    (ref, departmentId) => ref.watch(repoProvider).itemsByDepartment(departmentId));
 final itemsP = FutureProvider.autoDispose<List<Item>>((ref) => ref.watch(repoProvider).items());
 final locationsP = FutureProvider.autoDispose<List<Location>>((ref) => ref.watch(repoProvider).locations());
 final balancesP = FutureProvider.autoDispose<List<Balance>>((ref) => ref.watch(repoProvider).balances());
 final movementsP = FutureProvider.autoDispose<List<Movement>>((ref) => ref.watch(repoProvider).movements());
 final requisitionsP = FutureProvider.autoDispose<List<Requisition>>((ref) => ref.watch(repoProvider).requisitions());
+final requisitionByIdP = FutureProvider.autoDispose.family<Requisition, int>(
+    (ref, id) => ref.watch(repoProvider).requisition(id));
+final balancesByLocationP = FutureProvider.autoDispose.family<List<Balance>, int>(
+    (ref, locationId) => ref.watch(repoProvider).balancesByLocation(locationId));
+final balancesByItemP = FutureProvider.autoDispose.family<List<Balance>, int>(
+    (ref, itemId) => ref.watch(repoProvider).balancesByItem(itemId));
+/// One item at one location. Resolves to an empty list when no record exists yet.
+final balanceForP = FutureProvider.autoDispose.family<List<Balance>, (int, int)>((ref, key) async {
+  try {
+    return [await ref.watch(repoProvider).balanceFor(key.$1, key.$2)];
+  } catch (_) {
+    return <Balance>[];
+  }
+});
+final issuesByRequisitionP = FutureProvider.autoDispose.family<List<StockIssue>, int>(
+    (ref, requisitionId) => ref.watch(repoProvider).issuesForRequisition(requisitionId));
 final issuesP = FutureProvider.autoDispose<List<StockIssue>>((ref) => ref.watch(repoProvider).issues());
 final prsP = FutureProvider.autoDispose<List<PurchaseRequest>>((ref) => ref.watch(repoProvider).purchaseRequests());
 final posP = FutureProvider.autoDispose<List<PurchaseOrder>>((ref) => ref.watch(repoProvider).purchaseOrders());
@@ -219,6 +281,14 @@ void refreshAll(WidgetRef ref) {
   ]) {
     ref.invalidate(p);
   }
+  ref.invalidate(categoriesByDeptP);
+  ref.invalidate(itemsByCategoryP);
+  ref.invalidate(itemsByDeptP);
+  ref.invalidate(requisitionByIdP);
+  ref.invalidate(issuesByRequisitionP);
+  ref.invalidate(balancesByLocationP);
+  ref.invalidate(balancesByItemP);
+  ref.invalidate(balanceForP);
 }
 
 /// Total on hand per item id (all locations).

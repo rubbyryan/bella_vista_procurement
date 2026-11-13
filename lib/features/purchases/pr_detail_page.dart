@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models.dart';
 import '../../core/state.dart';
+import '../../core/theme/bv_theme.dart';
 import '../../core/widgets.dart';
 
 class PrDetailPage extends ConsumerStatefulWidget {
@@ -35,14 +36,14 @@ class _PrDetailPageState extends ConsumerState<PrDetailPage> {
     final s = p.status;
     final returned = s == 'RETURNED_TO_OM';
     final early = s == 'DRAFT' || returned;
-    StepState od(String? by, String? rej) {
-      if (early) return rej != null && returned ? StepState.rejected : StepState.todo;
-      if (s == 'CANCELLED') return StepState.todo;
-      return by != null ? StepState.done : StepState.current;
+    BVStepState od(String? by, String? rej) {
+      if (early) return rej != null && returned ? BVStepState.rejected : BVStepState.todo;
+      if (s == 'CANCELLED') return BVStepState.todo;
+      return by != null ? BVStepState.done : BVStepState.current;
     }
 
     final steps = <StepInfo>[
-      StepInfo('OM', early ? StepState.current : StepState.done),
+      StepInfo('OM', early ? BVStepState.current : BVStepState.done),
       StepInfo('OD1', od(p.od1By, p.od1RejBy)),
       StepInfo('OD2', od(p.od2By, p.od2RejBy)),
     ];
@@ -50,8 +51,8 @@ class _PrDetailPageState extends ConsumerState<PrDetailPage> {
       steps.add(StepInfo(
           'RA',
           s == 'PENDING_RA_APPROVAL'
-              ? StepState.current
-              : (p.raBy != null || s == 'APPROVED' || s == 'CONVERTED_TO_PO' ? StepState.done : StepState.todo)));
+              ? BVStepState.current
+              : (p.raBy != null || s == 'APPROVED' || s == 'CONVERTED_TO_PO' ? BVStepState.done : BVStepState.todo)));
     }
     return steps;
   }
@@ -108,28 +109,28 @@ class _PrDetailPageState extends ConsumerState<PrDetailPage> {
 
   Widget _body(Session me, PurchaseRequest p, List<PurchaseOrder> myOrders, Map<int, double> ordered, bool canPo) {
     Widget decision(String title, Future<void> Function(String) approve, Future<void> Function(String) reject) => Panel(
-          title: title,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            TextField(controller: _comment, minLines: 2, maxLines: 4, decoration: const InputDecoration(labelText: 'Your comment (optional for approval)')),
-            const SizedBox(height: 12),
-            Wrap(spacing: 12, runSpacing: 12, alignment: WrapAlignment.end, children: [
-              Builder(builder: (c) => OutlinedButton(
-                  style: dangerOutlined(c),
-                  onPressed: _busy
-                      ? null
-                      : () async {
-                          final v = await showCommentDialog(context,
-                              title: 'Reject purchase request', message: 'A comment is required. The request goes back to the Operations Manager.');
-                          if (v != null && mounted) await _run(() => reject(v), 'Rejected. Returned to the Operations Manager.');
-                        },
-                  child: const Text('Reject'))),
-              Builder(builder: (c) => FilledButton(
-                  style: ctaStyle(c),
-                  onPressed: _busy ? null : () => _run(() => approve(_comment.text), 'Approved.'),
-                  child: const Text('Approve'))),
-            ]),
-          ]),
-        );
+      title: title,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        TextField(controller: _comment, minLines: 2, maxLines: 4, decoration: const InputDecoration(labelText: 'Your comment (optional for approval)')),
+        const SizedBox(height: 12),
+        Wrap(spacing: 12, runSpacing: 12, alignment: WrapAlignment.end, children: [
+          Builder(builder: (c) => OutlinedButton(
+              style: dangerOutlined(c),
+              onPressed: _busy
+                  ? null
+                  : () async {
+                final v = await showCommentDialog(context,
+                    title: 'Reject purchase request', message: 'A comment is required. The request goes back to the Operations Manager.');
+                if (v != null && mounted) await _run(() => reject(v), 'Rejected. Returned to the Operations Manager.');
+              },
+              child: const Text('Reject'))),
+          Builder(builder: (c) => FilledButton(
+              style: ctaStyle(c),
+              onPressed: _busy ? null : () => _run(() => approve(_comment.text), 'Approved.'),
+              child: const Text('Approve'))),
+        ]),
+      ]),
+    );
 
     final repo = ref.read(repoProvider);
     return Column(children: [
@@ -198,11 +199,11 @@ class _PrDetailPageState extends ConsumerState<PrDetailPage> {
                 onPressed: _busy
                     ? null
                     : () async {
-                        final v = await askFields(context, title: 'Submit for directorate approval', labels: const ['Comments (optional)']);
-                        if (v != null && mounted) {
-                          await _run(() => repo.submitDirectorate(p.id, me.name, v[0]), 'Submitted to OD1 and OD2.');
-                        }
-                      },
+                  final v = await askFields(context, title: 'Submit for directorate approval', labels: const ['Comments (optional)']);
+                  if (v != null && mounted) {
+                    await _run(() => repo.submitDirectorate(p.id, me.name, v[0]), 'Submitted to OD1 and OD2.');
+                  }
+                },
                 child: const Text('Submit to directorate'))),
           ]),
         ),
@@ -289,48 +290,46 @@ class _PoDialogState extends State<_PoDialog> {
     final ok = _supplier.text.trim().isNotEmpty;
     return AlertDialog(
       title: const Text('Create purchase order'),
-      content: BVSurface(
-        child: SizedBox(
-          width: 480,
-          child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              TextField(controller: _supplier, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Supplier name *')),
-              const SizedBox(height: 8),
-              TextField(controller: _contact, decoration: const InputDecoration(labelText: 'Supplier contact')),
-              const SizedBox(height: 8),
-              TextField(controller: _address, decoration: const InputDecoration(labelText: 'Supplier address')),
-              const SizedBox(height: 8),
-              InkWell(
-                onTap: () async {
-                  final d = await showDatePicker(
-                      context: context, initialDate: DateTime.now().add(const Duration(days: 7)), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
-                  if (d != null) setState(() => _expected = d);
-                },
-                child: InputDecorator(
-                  decoration: const InputDecoration(labelText: 'Expected delivery', suffixIcon: Icon(Icons.calendar_today_rounded)),
-                  child: Text(_expected == null ? 'Not set' : dmy(_expected!)),
-                ),
+      content: SizedBox(
+        width: 480,
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            TextField(controller: _supplier, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Supplier name *')),
+            const SizedBox(height: 8),
+            TextField(controller: _contact, decoration: const InputDecoration(labelText: 'Supplier contact')),
+            const SizedBox(height: 8),
+            TextField(controller: _address, decoration: const InputDecoration(labelText: 'Supplier address')),
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: () async {
+                final d = await showDatePicker(
+                    context: context, initialDate: DateTime.now().add(const Duration(days: 7)), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
+                if (d != null) setState(() => _expected = d);
+              },
+              child: InputDecorator(
+                decoration: const InputDecoration(labelText: 'Expected delivery', suffixIcon: Icon(Icons.calendar_today_rounded)),
+                child: Text(_expected == null ? 'Not set' : dmy(_expected!)),
               ),
-              const SizedBox(height: 8),
-              TextField(controller: _location, decoration: const InputDecoration(labelText: 'Delivery location')),
-              const SizedBox(height: 8),
-              TextField(controller: _terms, decoration: const InputDecoration(labelText: 'Payment terms')),
-              const SizedBox(height: 8),
-              TextField(controller: _tax, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Tax amount (USD)')),
-              const Divider(height: 24),
-              for (final l in widget.pr.lines) ...[
-                Text(l.item.label, style: const TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
-                Row(children: [
-                  Expanded(child: TextField(controller: _qty[l.id], keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: InputDecoration(labelText: 'Quantity (${l.uom})'))),
-                  const SizedBox(width: 8),
-                  Expanded(child: TextField(controller: _price[l.id], keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Unit price'))),
-                ]),
-                const SizedBox(height: 10),
-              ],
-              TextField(controller: _remarks, decoration: const InputDecoration(labelText: 'Remarks')),
-            ]),
-          ),
+            ),
+            const SizedBox(height: 8),
+            TextField(controller: _location, decoration: const InputDecoration(labelText: 'Delivery location')),
+            const SizedBox(height: 8),
+            TextField(controller: _terms, decoration: const InputDecoration(labelText: 'Payment terms')),
+            const SizedBox(height: 8),
+            TextField(controller: _tax, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Tax amount (USD)')),
+            const Divider(height: 24),
+            for (final l in widget.pr.lines) ...[
+              Text(l.item.label, style: const TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Row(children: [
+                Expanded(child: TextField(controller: _qty[l.id], keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: InputDecoration(labelText: 'Quantity (${l.uom})'))),
+                const SizedBox(width: 8),
+                Expanded(child: TextField(controller: _price[l.id], keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Unit price'))),
+              ]),
+              const SizedBox(height: 10),
+            ],
+            TextField(controller: _remarks, decoration: const InputDecoration(labelText: 'Remarks')),
+          ]),
         ),
       ),
       actions: [
@@ -339,31 +338,31 @@ class _PoDialogState extends State<_PoDialog> {
           onPressed: !ok
               ? null
               : () {
-                  final items = <Map<String, dynamic>>[];
-                  for (final l in widget.pr.lines) {
-                    final q = double.tryParse(_qty[l.id]!.text) ?? 0;
-                    if (q > 0) {
-                      items.add({
-                        'purchaseRequestLineId': l.id,
-                        'quantity': q,
-                        'unitPrice': double.tryParse(_price[l.id]!.text) ?? l.unitPrice,
-                      });
-                    }
-                  }
-                  Navigator.pop(context, {
-                    'purchaseRequestId': widget.pr.id,
-                    'supplierName': _supplier.text.trim(),
-                    'supplierContact': _contact.text.trim(),
-                    'supplierAddress': _address.text.trim(),
-                    if (_expected != null) 'expectedDeliveryDate': '${_expected!.year.toString().padLeft(4, '0')}-${_expected!.month.toString().padLeft(2, '0')}-${_expected!.day.toString().padLeft(2, '0')}',
-                    'deliveryLocation': _location.text.trim(),
-                    'paymentTerms': _terms.text.trim(),
-                    'remarks': _remarks.text.trim(),
-                    'preparedBy': widget.me,
-                    'taxAmount': double.tryParse(_tax.text) ?? 0,
-                    'items': items,
-                  });
-                },
+            final items = <Map<String, dynamic>>[];
+            for (final l in widget.pr.lines) {
+              final q = double.tryParse(_qty[l.id]!.text) ?? 0;
+              if (q > 0) {
+                items.add({
+                  'purchaseRequestLineId': l.id,
+                  'quantity': q,
+                  'unitPrice': double.tryParse(_price[l.id]!.text) ?? l.unitPrice,
+                });
+              }
+            }
+            Navigator.pop(context, {
+              'purchaseRequestId': widget.pr.id,
+              'supplierName': _supplier.text.trim(),
+              'supplierContact': _contact.text.trim(),
+              'supplierAddress': _address.text.trim(),
+              if (_expected != null) 'expectedDeliveryDate': '${_expected!.year.toString().padLeft(4, '0')}-${_expected!.month.toString().padLeft(2, '0')}-${_expected!.day.toString().padLeft(2, '0')}',
+              'deliveryLocation': _location.text.trim(),
+              'paymentTerms': _terms.text.trim(),
+              'remarks': _remarks.text.trim(),
+              'preparedBy': widget.me,
+              'taxAmount': double.tryParse(_tax.text) ?? 0,
+              'items': items,
+            });
+          },
           child: const Text('Create'),
         ),
       ],

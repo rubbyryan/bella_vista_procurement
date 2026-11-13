@@ -302,12 +302,12 @@ class StatePill extends StatelessWidget {
   Widget build(BuildContext context) => StatusChip(statusLabel(status), statusKind(status));
 }
 
-enum StepState { done, current, todo, rejected }
+enum BVStepState { done, current, todo, rejected }
 
 class StepInfo {
   const StepInfo(this.label, this.state);
   final String label;
-  final StepState state;
+  final BVStepState state;
 }
 
 /// Approval position: green done, orange current, red rejected, grey to come.
@@ -318,11 +318,11 @@ class ChainStepper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = Theme.of(context).colorScheme;
-    Color ring(StepState st) => switch (st) {
-          StepState.done => s.tertiary,
-          StepState.current => s.secondary,
-          StepState.rejected => s.error,
-          StepState.todo => s.outlineVariant,
+    Color ring(BVStepState st) => switch (st) {
+          BVStepState.done => s.tertiary,
+          BVStepState.current => s.secondary,
+          BVStepState.rejected => s.error,
+          BVStepState.todo => s.outlineVariant,
         };
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -337,20 +337,20 @@ class ChainStepper extends StatelessWidget {
                   height: 28,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: steps[i].state == StepState.done
+                    color: steps[i].state == BVStepState.done
                         ? s.tertiary
-                        : (steps[i].state == StepState.rejected ? s.error : Colors.transparent),
+                        : (steps[i].state == BVStepState.rejected ? s.error : Colors.transparent),
                     border: Border.all(width: 2, color: ring(steps[i].state)),
                   ),
                   child: switch (steps[i].state) {
-                    StepState.done => Icon(Icons.check, size: 16, color: s.onTertiary),
-                    StepState.rejected => Icon(Icons.close, size: 16, color: s.onError),
-                    StepState.current => Center(
+                    BVStepState.done => Icon(Icons.check, size: 16, color: s.onTertiary),
+                    BVStepState.rejected => Icon(Icons.close, size: 16, color: s.onError),
+                    BVStepState.current => Center(
                         child: Container(
                             width: 10,
                             height: 10,
                             decoration: BoxDecoration(shape: BoxShape.circle, color: s.secondary))),
-                    StepState.todo => null,
+                    BVStepState.todo => null,
                   },
                 ),
                 const SizedBox(height: 4),
@@ -362,7 +362,7 @@ class ChainStepper extends StatelessWidget {
                 width: 24,
                 height: 2,
                 margin: const EdgeInsets.only(bottom: 18),
-                color: steps[i].state == StepState.done ? s.tertiary : s.outlineVariant,
+                color: steps[i].state == BVStepState.done ? s.tertiary : s.outlineVariant,
               ),
           ],
         ],

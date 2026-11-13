@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/theme/bv_theme.dart';
 import '../../core/widgets.dart';
@@ -31,16 +32,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         Panel(
           title: 'Profile',
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-<<<<<<< HEAD
-            Text(u.name),
-            Text(u.department.isEmpty ? u.role.label : '${u.role.label} | ${u.department}'),
-            Text(u.employeeNumber.isEmpty ? u.email : '${u.email} | ${u.employeeNumber}'),
-=======
             Text(me.name),
             Text(me.role.label),
+            if (me.department.isNotEmpty) Text('Department: ${me.department}'),
             const SizedBox(height: 8),
             const Text('The backend has no login yet: this name is sent with every action so the record shows who did it.'),
->>>>>>> 644b51d7db41bc6a7eda86fbababccd98d16d8fb
           ]),
         ),
         Panel(

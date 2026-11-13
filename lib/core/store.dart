@@ -63,11 +63,7 @@ class Store extends ChangeNotifier {
     }
     final key = id.trim().toLowerCase();
     final u = _find(
-        users,
-        (u) =>
-            u.email.toLowerCase() == key ||
-            u.username.toLowerCase() == key ||
-            (u.employeeNumber.isNotEmpty && u.employeeNumber.toLowerCase() == key));
+        users, (u) => u.email.toLowerCase() == key || u.staffNo.toLowerCase() == key);
     if (u == null || u.password != pw) {
       failedLogins++;
       if (failedLogins >= 5) {
@@ -75,16 +71,12 @@ class Store extends ChangeNotifier {
         failedLogins = 0;
         return 'Too many failed attempts. Locked for 15 minutes.';
       }
-      return 'Incorrect email / username or password.';
-    }
-    if (u.accountLocked) {
-      return 'Your account is locked. Please contact the System Administrator.';
+      return 'Incorrect email / staff number or password.';
     }
     if (!u.active) {
-      return 'Your account is pending activation by the System Administrator.';
+      return 'Your account is pending approval by Head Office Admin.';
     }
     failedLogins = 0;
-    u.lastLogin = DateTime.now();
     currentUser = u;
     notifyListeners();
     return null;
@@ -95,69 +87,41 @@ class Store extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Self-registration. The account starts inactive with the Requester role and
-  /// no department; the System Administrator assigns those and activates it.
   String? register({
-    required String firstName,
-    required String lastName,
+    required String name,
+    required String staffNo,
     required String email,
-    required String phoneNumber,
+    required String department,
+    required Role role,
     required String password,
   }) {
-    final mail = email.trim().toLowerCase();
-    if (users.any((u) => u.email.toLowerCase() == mail)) {
-      return 'An account with that email already exists.';
-    }
-    // Username is derived from the email address (made unique if needed).
-    final base = mail.split('@').first;
-    var username = base;
-    var n = 1;
-    while (users.any((u) => u.username.toLowerCase() == username)) {
-      username = '$base${++n}';
-    }
+    final exists = users.any((u) =>
+        u.email.toLowerCase() == email.trim().toLowerCase() ||
+        u.staffNo.toLowerCase() == staffNo.trim().toLowerCase());
+    if (exists) return 'An account with that email or staff number already exists.';
     users.add(AppUser(
       id: 'u_new${++_userSeq}',
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      username: username,
+      name: name.trim(),
+      staffNo: staffNo.trim(),
       email: email.trim(),
-      phoneNumber: phoneNumber.trim(),
+      department: department,
+      role: role,
       password: password,
-      role: Role.requester,
       active: false,
     ));
     notifyListeners();
     return null;
   }
 
-  // -------------------------------------------------------------------------
-  // User administration (System Administrator)
-  // -------------------------------------------------------------------------
-  /// Saves the role, department and active flag for a user in one go.
-  /// Returns an error message, or null on success.
-  String? updateUserAccess(
-    AppUser u, {
-    required Role role,
-    required String department,
-    required bool active,
-  }) {
-    final me = currentUser;
-    if (me == null || me.role != Role.admin) {
-      return 'Only the System Administrator can manage users.';
-    }
-    if (u.id == me.id && (role != u.role || !active)) {
-      return 'You cannot change your own role or deactivate your own account.';
-    }
-    if (active && department.isEmpty) {
-      return 'Select a department before activating this account.';
-    }
+  void approveUser(AppUser u, Role role) {
     u.role = role;
-    u.department = department;
-    u.active = active;
-    if (active) u.accountLocked = false;
-    u.updatedAt = DateTime.now();
+    u.active = true;
     notifyListeners();
-    return null;
+  }
+
+  void setUserRole(AppUser u, Role role) {
+    u.role = role;
+    notifyListeners();
   }
 
   // -------------------------------------------------------------------------
@@ -661,15 +625,14 @@ class Store extends ChangeNotifier {
     users
       ..clear()
       ..addAll([
-        AppUser(id: 'u_req', firstName: 'Tendai', lastName: 'Moyo', username: 'requester', employeeNumber: 'BV-0231', email: 'requester@bellavista.ac.zw', department: 'Science', role: Role.requester, password: kDemoPassword),
-        AppUser(id: 'u_stores', firstName: 'Rudo', lastName: 'Mandaza', username: 'stores', employeeNumber: 'BV-0102', email: 'stores@bellavista.ac.zw', department: 'Stores', role: Role.stores, password: kDemoPassword),
-        AppUser(id: 'u_head', firstName: 'Chipo', lastName: 'Nyathi', username: 'head', employeeNumber: 'BV-0010', email: 'head@bellavista.ac.zw', department: 'Administration', role: Role.head, password: kDemoPassword),
-        AppUser(id: 'u_om', firstName: 'Tafara', lastName: 'Chuma', username: 'om', employeeNumber: 'BV-0021', email: 'om@bellavista.ac.zw', department: 'Operations', role: Role.om, password: kDemoPassword),
-        AppUser(id: 'u_ho', firstName: 'Nyasha', lastName: 'Dube', username: 'ho', employeeNumber: 'BV-0003', email: 'ho@bellavista.ac.zw', department: 'Head Office', role: Role.ho, password: kDemoPassword),
-        AppUser(id: 'u_driver', firstName: 'Farai', lastName: 'Ndlovu', username: 'driver', employeeNumber: 'BV-0305', email: 'driver@bellavista.ac.zw', department: 'Transport', role: Role.driver, password: kDemoPassword),
-        AppUser(id: 'u_sec', firstName: 'S.', lastName: 'Mhlanga', username: 'security', employeeNumber: 'BV-0410', email: 'security@bellavista.ac.zw', department: 'Security', role: Role.security, password: kDemoPassword),
-        AppUser(id: 'u_admin', firstName: 'Admin', lastName: 'User', username: 'admin', employeeNumber: 'BV-0001', email: 'admin@bellavista.ac.zw', department: 'ICT', role: Role.admin, password: kDemoPassword),
-        AppUser(id: 'u_pending', firstName: 'Kudzai', lastName: 'Banda', username: 'kbanda', employeeNumber: 'BV-0450', email: 'kbanda@bellavista.ac.zw', phoneNumber: '+263 77 123 4567', role: Role.requester, password: kDemoPassword, active: false),
+        AppUser(id: 'u_req', name: 'Tendai Moyo', staffNo: 'BV-0231', email: 'requester@bellavista.ac.zw', department: 'Science', role: Role.requester, password: kDemoPassword),
+        AppUser(id: 'u_stores', name: 'Rudo Mandaza', staffNo: 'BV-0102', email: 'stores@bellavista.ac.zw', department: 'Stores', role: Role.stores, password: kDemoPassword),
+        AppUser(id: 'u_head', name: 'Chipo Nyathi', staffNo: 'BV-0010', email: 'head@bellavista.ac.zw', department: 'Administration', role: Role.head, password: kDemoPassword),
+        AppUser(id: 'u_om', name: 'Tafara Chuma', staffNo: 'BV-0021', email: 'om@bellavista.ac.zw', department: 'Operations', role: Role.om, password: kDemoPassword),
+        AppUser(id: 'u_ho', name: 'Nyasha Dube', staffNo: 'BV-0003', email: 'ho@bellavista.ac.zw', department: 'Head Office', role: Role.ho, password: kDemoPassword),
+        AppUser(id: 'u_driver', name: 'Farai Ndlovu', staffNo: 'BV-0305', email: 'driver@bellavista.ac.zw', department: 'Transport', role: Role.driver, password: kDemoPassword),
+        AppUser(id: 'u_sec', name: 'S. Mhlanga', staffNo: 'BV-0410', email: 'security@bellavista.ac.zw', department: 'Security', role: Role.security, password: kDemoPassword),
+        AppUser(id: 'u_pending', name: 'Kudzai Banda', staffNo: 'BV-0450', email: 'kbanda@bellavista.ac.zw', department: 'Library', role: Role.requester, password: kDemoPassword, active: false),
       ]);
 
     StockItem si(String id, String name, String unit, int hand, int reorder, int buffer, int max, double price) =>

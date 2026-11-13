@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models.dart';
-import '../../core/store.dart';
+import '../../core/state.dart';
 import '../../core/theme/bv_theme.dart';
+import '../../core/user_store.dart';
 import '../../core/widgets.dart';
 
 /// System Administrator page: pick a user from the list, assign a role and a
 /// department, and activate / deactivate the account with a toggle.
+/// Uses the in-memory demo accounts (no backend call yet).
 class UsersPage extends ConsumerStatefulWidget {
   const UsersPage({super.key});
 
@@ -72,15 +74,13 @@ class _UsersPageState extends ConsumerState<UsersPage> {
 
   @override
   Widget build(BuildContext context) {
-    final s = ref.watch(storeProvider);
-    final me = s.currentUser;
+    final store = ref.watch(userStoreProvider);
+    final me = ref.watch(sessionProvider);
     if (me == null) return const SizedBox();
     final wide = MediaQuery.sizeOf(context).width >= _wide;
-    final users = _filtered(s.users);
-    final pending = s.users.where((u) => !u.active).length;
-    final selected = wide && _selectedId != null
-        ? s.users.where((u) => u.id == _selectedId).firstOrNull
-        : null;
+    final users = _filtered(store.users);
+    final pending = store.users.where((u) => !u.active).length;
+    final selected = wide && _selectedId != null ? store.users.where((u) => u.id == _selectedId).firstOrNull : null;
 
     final list = Panel(
       title: 'Users (${users.length})',
@@ -125,9 +125,7 @@ class _UsersPageState extends ConsumerState<UsersPage> {
               isThreeLine: true,
               trailing: StatusChip(
                 u.accountLocked ? 'Locked' : (u.active ? 'Active' : 'Pending'),
-                u.accountLocked
-                    ? StatusKind.danger
-                    : (u.active ? StatusKind.success : StatusKind.pending),
+                u.accountLocked ? StatusKind.danger : (u.active ? StatusKind.success : StatusKind.pending),
               ),
             ),
           ],
@@ -171,10 +169,16 @@ class _AccessEditorState extends ConsumerState<_AccessEditor> {
   String? _error;
 
   AppUser? get _user {
-    for (final u in ref.read(storeProvider).users) {
+    for (final u in ref.read(userStoreProvider).users) {
       if (u.id == widget.userId) return u;
     }
     return null;
+  }
+
+  /// The signed-in administrator is "this" user when name and role match.
+  bool _isSelf(AppUser u) {
+    final me = ref.read(sessionProvider);
+    return me != null && me.name == u.name && me.role == u.role;
   }
 
   @override
@@ -189,11 +193,12 @@ class _AccessEditorState extends ConsumerState<_AccessEditor> {
   void _save() {
     final u = _user;
     if (u == null) return;
-    final err = ref.read(storeProvider).updateUserAccess(
+    final err = ref.read(userStoreProvider).updateUserAccess(
           u,
           role: _role,
           department: _dept,
           active: _active,
+          isSelf: _isSelf(u),
         );
     if (err != null) {
       setState(() => _error = err);
@@ -206,11 +211,11 @@ class _AccessEditorState extends ConsumerState<_AccessEditor> {
 
   @override
   Widget build(BuildContext context) {
-    final store = ref.watch(storeProvider);
+    ref.watch(userStoreProvider);
     final u = _user;
     if (u == null) return const Text('This user no longer exists.');
     final t = Theme.of(context);
-    final isSelf = store.currentUser?.id == u.id;
+    final isSelf = _isSelf(u);
     final dirty = _role != u.role || _dept != u.department || _active != u.active;
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -219,9 +224,11 @@ class _AccessEditorState extends ConsumerState<_AccessEditor> {
       Text(u.email),
       if (u.phoneNumber.isNotEmpty) Text(u.phoneNumber),
       Text('Username: ${u.username}', style: t.textTheme.labelMedium),
-      Text('Registered ${_fmt(u.createdAt)}'
-          '${u.lastLogin == null ? ' | Never signed in' : ' | Last sign-in ${_fmt(u.lastLogin!)}'}',
-          style: t.textTheme.labelMedium),
+      Text(
+        'Registered ${_fmt(u.createdAt)}'
+        '${u.lastLogin == null ? ' | Never signed in' : ' | Last sign-in ${_fmt(u.lastLogin!)}'}',
+        style: t.textTheme.labelMedium,
+      ),
       const SizedBox(height: 16),
       DropdownButtonFormField<Role>(
         value: _role,
@@ -234,7 +241,7 @@ class _AccessEditorState extends ConsumerState<_AccessEditor> {
         value: _dept.isEmpty ? null : _dept,
         decoration: const InputDecoration(labelText: 'Department'),
         hint: const Text('Select a department'),
-        items: [for (final d in kDepartments) DropdownMenuItem(value: d, child: Text(d))],
+        items: [for (final d in kUserDepartments) DropdownMenuItem(value: d, child: Text(d))],
         onChanged: (d) => setState(() => _dept = d ?? _dept),
       ),
       const SizedBox(height: 8),
@@ -246,8 +253,7 @@ class _AccessEditorState extends ConsumerState<_AccessEditor> {
         onChanged: isSelf ? null : (v) => setState(() => _active = v),
       ),
       if (isSelf)
-        Text('You cannot change your own role or deactivate your own account.',
-            style: t.textTheme.labelMedium),
+        Text('You cannot change your own role or deactivate your own account.', style: t.textTheme.labelMedium),
       if (_error != null) ...[
         const SizedBox(height: 8),
         Text(_error!, style: TextStyle(color: t.colorScheme.error)),

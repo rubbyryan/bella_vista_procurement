@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models.dart';
 import '../../core/state.dart';
+import '../../core/theme/bv_theme.dart';
 import '../../core/widgets.dart';
 
 class PoDetailPage extends ConsumerStatefulWidget {
@@ -118,10 +119,10 @@ class _PoDetailPageState extends ConsumerState<PoDetailPage> {
                         onPressed: _busy
                             ? null
                             : () async {
-                                final v = await askFields(context,
-                                    title: 'Cancel purchase order', labels: const ['Reason'], required: const [true], confirm: 'Cancel order', danger: true);
-                                if (v != null && mounted) await _run(() => repo.cancelPo(o.id, me.name, v[0]), 'Purchase order cancelled.');
-                              },
+                          final v = await askFields(context,
+                              title: 'Cancel purchase order', labels: const ['Reason'], required: const [true], confirm: 'Cancel order', danger: true);
+                          if (v != null && mounted) await _run(() => repo.cancelPo(o.id, me.name, v[0]), 'Purchase order cancelled.');
+                        },
                         child: const Text('Cancel order'))),
                     Builder(builder: (c) => FilledButton(
                         style: ctaStyle(c),
@@ -241,61 +242,59 @@ class _GrvDialogState extends State<_GrvDialog> {
     final ok = _receivedBy.text.trim().isNotEmpty;
     return AlertDialog(
       title: const Text('Receive delivery'),
-      content: BVSurface(
-        child: SizedBox(
-          width: 520,
-          child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              TextField(
-                controller: _receivedBy,
-                onChanged: (_) => setState(() {}),
-                decoration: const InputDecoration(labelText: 'Received by (security / receiving officer) *'),
-              ),
-              const SizedBox(height: 8),
-              Row(children: [
-                Expanded(child: TextField(controller: _dn, decoration: const InputDecoration(labelText: 'Delivery note no.'))),
-                const SizedBox(width: 8),
-                Expanded(child: TextField(controller: _vehicle, decoration: const InputDecoration(labelText: 'Vehicle reg.'))),
-              ]),
-              const SizedBox(height: 8),
-              TextField(controller: _driver, decoration: const InputDecoration(labelText: 'Driver name')),
-              const SizedBox(height: 8),
-              InkWell(
-                onTap: () async {
-                  final d = await showDatePicker(context: context, initialDate: _date, firstDate: DateTime(2026), lastDate: DateTime.now().add(const Duration(days: 30)));
-                  if (d != null) setState(() => _date = d);
-                },
-                child: InputDecorator(
-                  decoration: const InputDecoration(labelText: 'Delivery date', suffixIcon: Icon(Icons.calendar_today_rounded)),
-                  child: Text(dmy(_date)),
-                ),
-              ),
-              const Divider(height: 24),
-              for (final l in widget.po.lines) ...[
-                Text('${l.item.label} (ordered ${qty(l.quantity)}, received ${qty(widget.received[l.id] ?? 0)})', style: const TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
-                Row(children: [
-                  Expanded(child: TextField(controller: _delivered[l.id], keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Delivered'))),
-                  const SizedBox(width: 8),
-                  Expanded(child: TextField(controller: _accepted[l.id], keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Accepted'))),
-                  const SizedBox(width: 8),
-                  Expanded(child: TextField(controller: _damaged[l.id], keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Damaged'))),
-                ]),
-                const SizedBox(height: 6),
-                DropdownButtonFormField<int>(
-                  value: _loc[l.id],
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Store into'),
-                  items: [for (final x in widget.locations) DropdownMenuItem(value: x.id, child: Text(x.name))],
-                  onChanged: (v) => setState(() => _loc[l.id] = v ?? _loc[l.id]!),
-                ),
-                const SizedBox(height: 6),
-                TextField(controller: _note[l.id], decoration: const InputDecoration(labelText: 'Inspection remarks / reason if rejected')),
-                const SizedBox(height: 14),
-              ],
-              TextField(controller: _remarks, decoration: const InputDecoration(labelText: 'Remarks')),
+      content: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            TextField(
+              controller: _receivedBy,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(labelText: 'Received by (security / receiving officer) *'),
+            ),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: TextField(controller: _dn, decoration: const InputDecoration(labelText: 'Delivery note no.'))),
+              const SizedBox(width: 8),
+              Expanded(child: TextField(controller: _vehicle, decoration: const InputDecoration(labelText: 'Vehicle reg.'))),
             ]),
-          ),
+            const SizedBox(height: 8),
+            TextField(controller: _driver, decoration: const InputDecoration(labelText: 'Driver name')),
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: () async {
+                final d = await showDatePicker(context: context, initialDate: _date, firstDate: DateTime(2026), lastDate: DateTime.now().add(const Duration(days: 30)));
+                if (d != null) setState(() => _date = d);
+              },
+              child: InputDecorator(
+                decoration: const InputDecoration(labelText: 'Delivery date', suffixIcon: Icon(Icons.calendar_today_rounded)),
+                child: Text(dmy(_date)),
+              ),
+            ),
+            const Divider(height: 24),
+            for (final l in widget.po.lines) ...[
+              Text('${l.item.label} (ordered ${qty(l.quantity)}, received ${qty(widget.received[l.id] ?? 0)})', style: const TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Row(children: [
+                Expanded(child: TextField(controller: _delivered[l.id], keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Delivered'))),
+                const SizedBox(width: 8),
+                Expanded(child: TextField(controller: _accepted[l.id], keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Accepted'))),
+                const SizedBox(width: 8),
+                Expanded(child: TextField(controller: _damaged[l.id], keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Damaged'))),
+              ]),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<int>(
+                value: _loc[l.id],
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Store into'),
+                items: [for (final x in widget.locations) DropdownMenuItem(value: x.id, child: Text(x.name))],
+                onChanged: (v) => setState(() => _loc[l.id] = v ?? _loc[l.id]!),
+              ),
+              const SizedBox(height: 6),
+              TextField(controller: _note[l.id], decoration: const InputDecoration(labelText: 'Inspection remarks / reason if rejected')),
+              const SizedBox(height: 14),
+            ],
+            TextField(controller: _remarks, decoration: const InputDecoration(labelText: 'Remarks')),
+          ]),
         ),
       ),
       actions: [
@@ -304,24 +303,24 @@ class _GrvDialogState extends State<_GrvDialog> {
           onPressed: !ok
               ? null
               : () {
-                  final lines = <Map<String, dynamic>>[];
-                  final err = _build(lines);
-                  if (err != null) {
-                    snack(context, err);
-                    return;
-                  }
-                  Navigator.pop(context, {
-                    'purchaseOrderId': widget.po.id,
-                    'createdBy': widget.me.name,
-                    'receivedBy': _receivedBy.text.trim(),
-                    'deliveryNoteNumber': _dn.text.trim(),
-                    'deliveryDate': '${_date.year.toString().padLeft(4, '0')}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}',
-                    'vehicleRegistration': _vehicle.text.trim(),
-                    'driverName': _driver.text.trim(),
-                    'remarks': _remarks.text.trim(),
-                    'items': lines,
-                  });
-                },
+            final lines = <Map<String, dynamic>>[];
+            final err = _build(lines);
+            if (err != null) {
+              snack(context, err);
+              return;
+            }
+            Navigator.pop(context, {
+              'purchaseOrderId': widget.po.id,
+              'createdBy': widget.me.name,
+              'receivedBy': _receivedBy.text.trim(),
+              'deliveryNoteNumber': _dn.text.trim(),
+              'deliveryDate': '${_date.year.toString().padLeft(4, '0')}-${_date.month.toString().padLeft(2, '0')}-${_date.day.toString().padLeft(2, '0')}',
+              'vehicleRegistration': _vehicle.text.trim(),
+              'driverName': _driver.text.trim(),
+              'remarks': _remarks.text.trim(),
+              'items': lines,
+            });
+          },
           child: const Text('Create GRV'),
         ),
       ],

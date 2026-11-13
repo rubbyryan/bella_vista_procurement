@@ -18,34 +18,30 @@ const _dash = NavItem('/app/dashboard', 'Dashboard', Icons.dashboard_rounded);
 const _req = NavItem('/app/requisitions', 'Requisitions', Icons.description_rounded);
 const _pur = NavItem('/app/purchases', 'Purchases', Icons.shopping_cart_rounded);
 const _del = NavItem('/app/deliveries', 'Deliveries', Icons.local_shipping_rounded);
-<<<<<<< HEAD
-const _vou = NavItem('/app/vouchers', 'Vouchers', Icons.receipt_long_rounded, mobile: false);
-const _usr = NavItem('/app/users', 'Users', Icons.group_rounded);
-=======
 const _stock = NavItem('/app/stock', 'Stock', Icons.inventory_2_rounded);
 const _cat = NavItem('/app/catalogue', 'Catalogue', Icons.category_rounded);
->>>>>>> 644b51d7db41bc6a7eda86fbababccd98d16d8fb
+const _items = NavItem('/app/items', 'Items', Icons.list_alt_rounded);
+const _locs = NavItem('/app/locations', 'Locations', Icons.place_rounded);
+const _dep = NavItem('/app/departments', 'Departments', Icons.apartment_rounded);
+const _cats = NavItem('/app/categories', 'Categories', Icons.folder_copy_rounded);
+const _iss = NavItem('/app/issues', 'Stock issues', Icons.outbox_rounded);
+const _bal = NavItem('/app/balances', 'Stock balances', Icons.inventory_rounded);
+const _catalogue = NavItem('/app/items', 'Catalogue', Icons.menu_book_rounded); // read-only view for requesters
+const _usr = NavItem('/app/users', 'Users', Icons.group_rounded);
 const _set = NavItem('/app/settings', 'Settings', Icons.settings_rounded);
 
-/// Menu items depend on the role picked at sign-in.
+/// Every page except user administration.
+const _everything = [_dash, _req, _pur, _del, _stock, _bal, _iss, _cat, _dep, _cats, _items, _locs, _set];
+
+/// Menu items depend on the role. Stores, Head, Operations Manager, OD1, OD2 and
+/// the Responsible Authority see every page; only the Stores Controller can
+/// change catalogue data, and only a Requester can create requisitions.
 List<NavItem> navFor(Role r) => switch (r) {
-      Role.requester => const [_dash, _req, _set],
-      Role.stores => const [_dash, _req, _pur, _del, _stock, _cat, _set],
-      Role.head => const [_dash, _req, _set],
-<<<<<<< HEAD
-      Role.om => const [_dash, _req, _stock, _vou, _set],
-      Role.od1 => const [_dash, _req, _set],
-      Role.od2 => const [_dash, _req, _set],
-      Role.responsibleAuthority => const [_dash, _req, _set],
-      Role.ho => const [_dash, _req, _stock, _del, _vou, _set],
-      Role.driver => const [_dash, _del, _set],
-=======
-      Role.om => const [_dash, _req, _pur, _del, _stock, _set],
-      Role.od1 || Role.od2 || Role.ra => const [_dash, _pur, _set],
->>>>>>> 644b51d7db41bc6a7eda86fbababccd98d16d8fb
-      Role.security => const [_dash, _del, _set],
-      Role.admin => const [_dash, _usr, _set],
-    };
+  Role.requester => const [_dash, _req, _cats, _catalogue, _set],
+  Role.stores || Role.head || Role.om || Role.od1 || Role.od2 || Role.ra => _everything,
+  Role.security => const [_dash, _del, _set],
+  Role.admin => const [_dash, _usr, _set],
+};
 
 bool canOpen(Role r, String path) {
   if (path.startsWith('/app/purchase-')) return navFor(r).any((n) => n.path == '/app/purchases');
@@ -138,26 +134,31 @@ class AppShell extends ConsumerWidget {
         width: 220,
         color: _sidebarColor(context),
         child: Column(children: [
-          const SizedBox(height: 12),
-          for (var i = 0; i < items.length; i++)
-            InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => context.go(items[i].path),
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                decoration: BoxDecoration(
-                  color: i == sel ? Colors.white.withValues(alpha: 0.16) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(children: [
-                  Icon(items[i].icon, color: Colors.white, size: 20),
-                  const SizedBox(width: 12),
-                  Text(items[i].label, style: const TextStyle(color: Colors.white, fontFamily: 'Poppins', fontSize: 14)),
-                ]),
-              ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.only(top: 12, bottom: 8),
+              children: [
+                for (var i = 0; i < items.length; i++)
+                  InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => context.go(items[i].path),
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: i == sel ? Colors.white.withValues(alpha: 0.16) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(children: [
+                        Icon(items[i].icon, color: Colors.white, size: 20),
+                        const SizedBox(width: 12),
+                        Text(items[i].label, style: const TextStyle(color: Colors.white, fontFamily: 'Poppins', fontSize: 14)),
+                      ]),
+                    ),
+                  ),
+              ],
             ),
-          const Spacer(),
+          ),
           Container(
             margin: const EdgeInsets.all(12),
             padding: const EdgeInsets.all(10),
@@ -201,13 +202,13 @@ class AppShell extends ConsumerWidget {
       body: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [nav, Expanded(child: child)]),
       bottomNavigationBar: w < 600
           ? NavigationBar(
-              selectedIndex: sel < 0 ? 0 : sel,
-              onDestinationSelected: (i) => context.go(mobileItems[i].path),
-              destinations: [
-                for (final n in mobileItems)
-                  NavigationDestination(icon: Icon(n.icon), label: n.path.endsWith('settings') ? 'Me' : n.label),
-              ],
-            )
+        selectedIndex: sel < 0 ? 0 : sel,
+        onDestinationSelected: (i) => context.go(mobileItems[i].path),
+        destinations: [
+          for (final n in mobileItems)
+            NavigationDestination(icon: Icon(n.icon), label: n.path.endsWith('settings') ? 'Me' : n.label),
+        ],
+      )
           : null,
     );
   }
