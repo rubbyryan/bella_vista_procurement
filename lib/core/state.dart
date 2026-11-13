@@ -186,13 +186,21 @@ class Repo {
   Future<List<StockIssue>> issuesForRequisition(int requisitionId) async =>
       _list(await api.get('/stock-issues/requisition/$requisitionId'), StockIssue.fromJson);
   Future<void> issueStock(int requisitionId, String issuedBy, String receivedBy, String remarks,
-          List<Map<String, dynamic>> lines) =>
+      List<Map<String, dynamic>> lines) =>
       api.post('/stock-issues/requisition/$requisitionId',
           query: {'issuedBy': issuedBy, 'receivedBy': receivedBy, 'remarks': remarks}, body: lines);
 
   // purchase requests
   Future<List<PurchaseRequest>> purchaseRequests() async =>
       _list(await api.get('/purchase-requests'), PurchaseRequest.fromJson);
+  Future<PurchaseRequest> purchaseRequest(int id) async =>
+      PurchaseRequest.fromJson(Map<String, dynamic>.from(await api.get('/purchase-requests/$id') as Map));
+  Future<PurchaseRequest> purchaseRequestByNumber(String number) async => PurchaseRequest.fromJson(
+      Map<String, dynamic>.from(await api.get('/purchase-requests/number/${Uri.encodeComponent(number.trim())}') as Map));
+  Future<PurchaseRequest> purchaseRequestForRequisition(int requisitionId) async => PurchaseRequest.fromJson(
+      Map<String, dynamic>.from(await api.get('/purchase-requests/requisition/$requisitionId') as Map));
+  Future<List<PurchaseRequest>> purchaseRequestsByStatus(String status) async =>
+      _list(await api.get('/purchase-requests/status/$status'), PurchaseRequest.fromJson);
   Future<void> createPurchaseRequest({
     required int requisitionId,
     required String by,
@@ -220,6 +228,14 @@ class Repo {
   // purchase orders
   Future<List<PurchaseOrder>> purchaseOrders() async =>
       _list(await api.get('/purchase-orders'), PurchaseOrder.fromJson);
+  Future<PurchaseOrder> purchaseOrder(int id) async =>
+      PurchaseOrder.fromJson(Map<String, dynamic>.from(await api.get('/purchase-orders/$id') as Map));
+  Future<PurchaseOrder> purchaseOrderByNumber(String number) async => PurchaseOrder.fromJson(
+      Map<String, dynamic>.from(await api.get('/purchase-orders/number/${Uri.encodeComponent(number.trim())}') as Map));
+  Future<List<PurchaseOrder>> purchaseOrdersForRequest(int purchaseRequestId) async =>
+      _list(await api.get('/purchase-orders/purchase-request/$purchaseRequestId'), PurchaseOrder.fromJson);
+  Future<List<PurchaseOrder>> purchaseOrdersByStatus(String status) async =>
+      _list(await api.get('/purchase-orders/status/$status'), PurchaseOrder.fromJson);
   Future<void> createPurchaseOrder(Map<String, dynamic> body) => api.post('/purchase-orders', body: body);
   Future<void> issuePo(int id, String by) => api.put('/purchase-orders/$id/issue', query: {'issuedBy': by});
   Future<void> cancelPo(int id, String by, String reason) =>
@@ -227,6 +243,13 @@ class Repo {
 
   // goods received vouchers
   Future<List<Grv>> grvs() async => _list(await api.get('/grvs'), Grv.fromJson);
+  Future<Grv> grv(int id) async => Grv.fromJson(Map<String, dynamic>.from(await api.get('/grvs/$id') as Map));
+  Future<Grv> grvByNumber(String number) async =>
+      Grv.fromJson(Map<String, dynamic>.from(await api.get('/grvs/number/${Uri.encodeComponent(number.trim())}') as Map));
+  Future<List<Grv>> grvsForOrder(int purchaseOrderId) async =>
+      _list(await api.get('/grvs/purchase-order/$purchaseOrderId'), Grv.fromJson);
+  Future<List<Grv>> grvsByStatus(String status) async =>
+      _list(await api.get('/grvs/status/$status'), Grv.fromJson);
   Future<void> createGrv(Map<String, dynamic> body) => api.post('/grvs', body: body);
   Future<void> grvSubmit(int id, String by) => api.put('/grvs/$id/submit', query: {'submittedBy': by});
   Future<void> grvVerify(int id, String by, String remarks) =>
@@ -242,22 +265,22 @@ final repoProvider = Provider<Repo>((ref) => Repo(ref.watch(apiProvider)));
 final departmentsP = FutureProvider.autoDispose<List<Dept>>((ref) => ref.watch(repoProvider).departments());
 final categoriesP = FutureProvider.autoDispose<List<Category>>((ref) => ref.watch(repoProvider).categories());
 final categoriesByDeptP = FutureProvider.autoDispose.family<List<Category>, int>(
-    (ref, departmentId) => ref.watch(repoProvider).categoriesByDepartment(departmentId));
+        (ref, departmentId) => ref.watch(repoProvider).categoriesByDepartment(departmentId));
 final itemsByCategoryP = FutureProvider.autoDispose.family<List<Item>, int>(
-    (ref, categoryId) => ref.watch(repoProvider).itemsByCategory(categoryId));
+        (ref, categoryId) => ref.watch(repoProvider).itemsByCategory(categoryId));
 final itemsByDeptP = FutureProvider.autoDispose.family<List<Item>, int>(
-    (ref, departmentId) => ref.watch(repoProvider).itemsByDepartment(departmentId));
+        (ref, departmentId) => ref.watch(repoProvider).itemsByDepartment(departmentId));
 final itemsP = FutureProvider.autoDispose<List<Item>>((ref) => ref.watch(repoProvider).items());
 final locationsP = FutureProvider.autoDispose<List<Location>>((ref) => ref.watch(repoProvider).locations());
 final balancesP = FutureProvider.autoDispose<List<Balance>>((ref) => ref.watch(repoProvider).balances());
 final movementsP = FutureProvider.autoDispose<List<Movement>>((ref) => ref.watch(repoProvider).movements());
 final requisitionsP = FutureProvider.autoDispose<List<Requisition>>((ref) => ref.watch(repoProvider).requisitions());
 final requisitionByIdP = FutureProvider.autoDispose.family<Requisition, int>(
-    (ref, id) => ref.watch(repoProvider).requisition(id));
+        (ref, id) => ref.watch(repoProvider).requisition(id));
 final balancesByLocationP = FutureProvider.autoDispose.family<List<Balance>, int>(
-    (ref, locationId) => ref.watch(repoProvider).balancesByLocation(locationId));
+        (ref, locationId) => ref.watch(repoProvider).balancesByLocation(locationId));
 final balancesByItemP = FutureProvider.autoDispose.family<List<Balance>, int>(
-    (ref, itemId) => ref.watch(repoProvider).balancesByItem(itemId));
+        (ref, itemId) => ref.watch(repoProvider).balancesByItem(itemId));
 /// One item at one location. Resolves to an empty list when no record exists yet.
 final balanceForP = FutureProvider.autoDispose.family<List<Balance>, (int, int)>((ref, key) async {
   try {
@@ -267,11 +290,23 @@ final balanceForP = FutureProvider.autoDispose.family<List<Balance>, (int, int)>
   }
 });
 final issuesByRequisitionP = FutureProvider.autoDispose.family<List<StockIssue>, int>(
-    (ref, requisitionId) => ref.watch(repoProvider).issuesForRequisition(requisitionId));
+        (ref, requisitionId) => ref.watch(repoProvider).issuesForRequisition(requisitionId));
 final issuesP = FutureProvider.autoDispose<List<StockIssue>>((ref) => ref.watch(repoProvider).issues());
 final prsP = FutureProvider.autoDispose<List<PurchaseRequest>>((ref) => ref.watch(repoProvider).purchaseRequests());
 final posP = FutureProvider.autoDispose<List<PurchaseOrder>>((ref) => ref.watch(repoProvider).purchaseOrders());
 final grvsP = FutureProvider.autoDispose<List<Grv>>((ref) => ref.watch(repoProvider).grvs());
+
+final prByIdP = FutureProvider.autoDispose.family<PurchaseRequest, int>((ref, id) => ref.watch(repoProvider).purchaseRequest(id));
+final poByIdP = FutureProvider.autoDispose.family<PurchaseOrder, int>((ref, id) => ref.watch(repoProvider).purchaseOrder(id));
+final grvByIdP = FutureProvider.autoDispose.family<Grv, int>((ref, id) => ref.watch(repoProvider).grv(id));
+final prsByStatusP = FutureProvider.autoDispose.family<List<PurchaseRequest>, String>(
+        (ref, status) => ref.watch(repoProvider).purchaseRequestsByStatus(status));
+final posByStatusP = FutureProvider.autoDispose.family<List<PurchaseOrder>, String>(
+        (ref, status) => ref.watch(repoProvider).purchaseOrdersByStatus(status));
+final grvsByStatusP = FutureProvider.autoDispose.family<List<Grv>, String>(
+        (ref, status) => ref.watch(repoProvider).grvsByStatus(status));
+final grvsForOrderP = FutureProvider.autoDispose.family<List<Grv>, int>(
+        (ref, purchaseOrderId) => ref.watch(repoProvider).grvsForOrder(purchaseOrderId));
 
 /// Re-load everything after an action.
 void refreshAll(WidgetRef ref) {
@@ -289,6 +324,13 @@ void refreshAll(WidgetRef ref) {
   ref.invalidate(balancesByLocationP);
   ref.invalidate(balancesByItemP);
   ref.invalidate(balanceForP);
+  ref.invalidate(prByIdP);
+  ref.invalidate(poByIdP);
+  ref.invalidate(grvByIdP);
+  ref.invalidate(prsByStatusP);
+  ref.invalidate(posByStatusP);
+  ref.invalidate(grvsByStatusP);
+  ref.invalidate(grvsForOrderP);
 }
 
 /// Total on hand per item id (all locations).

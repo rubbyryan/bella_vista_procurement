@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/models.dart';
 import '../../core/state.dart';
-import '../../core/theme/bv_theme.dart';
 import '../../core/widgets.dart';
 
 class PoDetailPage extends ConsumerStatefulWidget {

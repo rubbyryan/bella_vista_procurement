@@ -6,26 +6,26 @@ import '../../core/state.dart';
 import '../../core/theme/bv_theme.dart';
 import '../../core/widgets.dart';
 
-enum _Lvl { healthy, reorder, critical, out }
+enum StockLvl { healthy, reorder, critical, out }
 
-_Lvl levelOf(Item i, double onHand) {
-  if (onHand <= 0) return _Lvl.out;
-  if (onHand <= i.minLevel) return _Lvl.critical;
-  if (onHand <= i.reorderLevel) return _Lvl.reorder;
-  return _Lvl.healthy;
+StockLvl levelOf(Item i, double onHand) {
+  if (onHand <= 0) return StockLvl.out;
+  if (onHand <= i.minLevel) return StockLvl.critical;
+  if (onHand <= i.reorderLevel) return StockLvl.reorder;
+  return StockLvl.healthy;
 }
 
-StatusChip levelChip(_Lvl l) => switch (l) {
-      _Lvl.healthy => const StatusChip('Healthy', StatusKind.success),
-      _Lvl.reorder => const StatusChip('Reorder', StatusKind.pending),
-      _Lvl.critical => const StatusChip('Critical', StatusKind.danger),
-      _Lvl.out => const StatusChip('Out of stock', StatusKind.danger),
+StatusChip levelChip(StockLvl l) => switch (l) {
+      StockLvl.healthy => const StatusChip('Healthy', StatusKind.success),
+      StockLvl.reorder => const StatusChip('Reorder', StatusKind.pending),
+      StockLvl.critical => const StatusChip('Critical', StatusKind.danger),
+      StockLvl.out => const StatusChip('Out of stock', StatusKind.danger),
     };
 
 /// Number of items at or below reorder level (used by the dashboard).
 int lowStockCount(List<Item> items, List<Balance> balances) {
   final m = onHandByItem(balances);
-  return items.where((i) => levelOf(i, m[i.id] ?? 0) != _Lvl.healthy).length;
+  return items.where((i) => levelOf(i, m[i.id] ?? 0) != StockLvl.healthy).length;
 }
 
 class StockPage extends ConsumerStatefulWidget {
@@ -87,9 +87,9 @@ class _StockPageState extends ConsumerState<StockPage> {
               bool match(Item i) {
                 final l = levelOf(i, total[i.id] ?? 0);
                 return switch (_f) {
-                  'Reorder' => l == _Lvl.reorder,
-                  'Critical' => l == _Lvl.critical,
-                  'Out of stock' => l == _Lvl.out,
+                  'Reorder' => l == StockLvl.reorder,
+                  'Critical' => l == StockLvl.critical,
+                  'Out of stock' => l == StockLvl.out,
                   _ => true,
                 };
               }
@@ -142,8 +142,8 @@ class _StockPageState extends ConsumerState<StockPage> {
     return Builder(builder: (c) {
       final sc = Theme.of(c).colorScheme;
       final bar = switch (lvl) {
-        _Lvl.healthy => sc.tertiary,
-        _Lvl.reorder => sc.secondary,
+        StockLvl.healthy => sc.tertiary,
+        StockLvl.reorder => sc.secondary,
         _ => sc.error,
       };
       final top = i.reorderLevel <= 0 ? (total <= 0 ? 1.0 : total * 2) : i.reorderLevel * 3;
