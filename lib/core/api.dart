@@ -16,12 +16,22 @@ class ApiException implements Exception {
 }
 
 /// Thin REST client for the Spring Boot backend (bellavistaerp).
+///
+/// Paths are relative to /api/procurement (e.g. '/users'). A path that already
+/// starts with '/api/' is used as given (e.g. '/api/auth/login').
+/// When a [token] is set it is sent as `Authorization: Bearer <token>`.
 class ApiClient {
-  ApiClient(String base) : base = base.trim().replaceAll(RegExp(r'/+$'), '');
+  ApiClient(String base, {this.token, this.onUnauthorized}) : base = base.trim().replaceAll(RegExp(r'/+$'), '');
   final String base;
+  final String? token;
+
+  /// Called when the server answers 401 to a request that carried a token
+  /// (expired or invalid token), so the app can sign the user out.
+  final void Function()? onUnauthorized;
 
   Uri _u(String path, [Map<String, String?>? q]) {
-    final uri = Uri.parse('$base/api/procurement$path');
+    final prefix = path.startsWith('/api/') ? '' : '/api/procurement';
+    final uri = Uri.parse('$base$prefix$path');
     final params = <String, String>{
       if (q != null)
         for (final e in q.entries)
@@ -30,7 +40,11 @@ class ApiClient {
     return params.isEmpty ? uri : uri.replace(queryParameters: params);
   }
 
-  static const _h = {'Content-Type': 'application/json', 'Accept': 'application/json'};
+  Map<String, String> get _h => {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    if (token != null && token!.isNotEmpty) 'Authorization': 'Bearer $token',
+  };
 
   dynamic _decode(http.Response r) {
     dynamic body;
@@ -38,18 +52,36 @@ class ApiClient {
       try {
         body = jsonDecode(utf8.decode(r.bodyBytes));
       } catch (_) {
+        if (r.statusCode < 400) {
+          throw ApiException(
+              'The server sent a reply the app cannot read (invalid JSON). Check the backend console for an error.',
+              r.statusCode);
+        }
         body = r.body;
       }
     }
     if (r.statusCode >= 400) {
-      String msg = 'Request failed (${r.statusCode}).';
+      if (r.statusCode == 401 && token != null && token!.isNotEmpty) {
+        onUnauthorized?.call();
+        throw ApiException('Your session has expired. Please sign in again.', 401);
+      }
+      String? msg;
       if (body is Map) {
-        final m = body['message'] ?? body['detail'] ?? body['error'];
-        if (m != null && '$m'.trim().isNotEmpty) msg = '$m';
-        if (r.statusCode == 500 && body['message'] == null) {
-          msg = 'The server returned an error (500). Apply the backend patch (see the instructions).';
+        for (final k in ['message', 'detail', 'error']) {
+          final v = body[k];
+          if (v != null && '$v'.trim().isNotEmpty) {
+            msg = '$v';
+            break;
+          }
         }
       }
+      msg ??= switch (r.statusCode) {
+        401 => 'Not signed in.',
+        403 => 'You do not have permission to do that (or your session has expired).',
+        404 => 'Not found.',
+        500 => 'The server returned an error (500).',
+        _ => 'Request failed (${r.statusCode}).',
+      };
       throw ApiException(msg, r.statusCode);
     }
     return body;
@@ -76,4 +108,16 @@ class ApiClient {
 
   Future<dynamic> patch(String path, {Map<String, String?>? query}) =>
       _guard(() async => _decode(await http.patch(_u(path, query), headers: _h)));
+
+  Future<dynamic> delete(String path, {Map<String, String?>? query}) =>
+      _guard(() async => _decode(await http.delete(_u(path, query), headers: _h)));
+
+  /// Connection check that needs no login: the Swagger JSON is public.
+  /// On Flutter web this also proves the browser is allowed to call the server (CORS).
+  Future<void> ping() => _guard(() async {
+    final r = await http.get(Uri.parse('$base/v3/api-docs'), headers: {'Accept': 'application/json'});
+    if (r.statusCode >= 400) {
+      throw ApiException('The server answered ${r.statusCode} for /v3/api-docs.', r.statusCode);
+    }
+  });
 }

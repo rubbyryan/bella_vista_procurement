@@ -110,7 +110,7 @@ class AppShell extends ConsumerWidget {
             if (v == 'out') ref.read(sessionProvider.notifier).logout();
           },
           itemBuilder: (_) => [
-            PopupMenuItem(enabled: false, child: Text('${me.name}\n${me.role.label}')),
+            PopupMenuItem(enabled: false, child: Text('${me.name}\n${me.roleTitle}')),
             const PopupMenuItem(value: 'settings', child: Text('Settings')),
             const PopupMenuItem(value: 'out', child: Text('Switch user')),
           ],
@@ -171,7 +171,7 @@ class AppShell extends ConsumerWidget {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(me.role.label, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12)),
+                child: Text(me.roleTitle, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 12)),
               ),
             ]),
           ),

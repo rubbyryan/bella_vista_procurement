@@ -3,16 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/api.dart';
-import '../../core/models.dart';
 import '../../core/state.dart';
 import '../../core/user_store.dart';
 import '../../core/widgets.dart';
 
-enum AuthMode { login, register }
+enum _Mode { signIn, register }
 
-/// Sign in / register. Accounts are in-memory demo accounts (see
-/// core/user_store.dart); no backend call is made for them. The server address
-/// below is only used by the pages that already talk to the backend.
+/// Sign in (POST /api/auth/login) or create an account (POST /api/auth/register).
+/// New accounts are inactive until an administrator activates them on the Users page.
 class AuthPage extends ConsumerStatefulWidget {
   const AuthPage({super.key});
   @override
@@ -20,36 +18,41 @@ class AuthPage extends ConsumerStatefulWidget {
 }
 
 class _AuthPageState extends ConsumerState<AuthPage> {
-  final _form = GlobalKey<FormState>();
-  final _id = TextEditingController(); // email / username on sign in, email on register
+  final _loginForm = GlobalKey<FormState>();
+  final _regForm = GlobalKey<FormState>();
+
+  // sign in
+  final _username = TextEditingController();
   final _pw = TextEditingController();
+
+  // register
+  final _emp = TextEditingController();
   final _first = TextEditingController();
   final _last = TextEditingController();
+  final _regUser = TextEditingController();
+  final _email = TextEditingController();
   final _phone = TextEditingController();
-  final _confirm = TextEditingController();
+  final _job = TextEditingController();
+  final _regPw = TextEditingController();
+  final _regPw2 = TextEditingController();
+
   late final _server = TextEditingController(text: ref.read(apiBaseProvider));
 
-  AuthMode _mode = AuthMode.login;
+  _Mode _mode = _Mode.signIn;
   bool _showPw = false;
+  bool _busy = false;
   String? _error;
-  String? _info;
+  String? _notice; // success message shown on the sign-in screen after registering
   String? _serverStatus;
   bool _serverOk = false, _testing = false;
 
   @override
   void dispose() {
-    for (final c in [_id, _pw, _first, _last, _phone, _confirm, _server]) {
+    for (final c in [_username, _pw, _emp, _first, _last, _regUser, _email, _phone, _job, _regPw, _regPw2, _server]) {
       c.dispose();
     }
     super.dispose();
   }
-
-  void _switch(AuthMode m) => setState(() {
-        _mode = m;
-        _error = null;
-        _info = null;
-        _form.currentState?.reset();
-      });
 
   String? _required(String? v) => (v == null || v.trim().isEmpty) ? 'Required' : null;
 
@@ -60,71 +63,130 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     return null;
   }
 
-  String? _phoneRule(String? v) {
+  String? _usernameRule(String? v) {
     final s = (v ?? '').trim();
     if (s.isEmpty) return 'Required';
-    final digits = s.replaceAll(RegExp(r'\D'), '');
-    if (!RegExp(r'^[0-9+\-()\s]+$').hasMatch(s) || digits.length < 7 || digits.length > 15) {
-      return 'Enter a valid phone number';
-    }
+    if (s.contains(RegExp(r'\s'))) return 'No spaces allowed';
     return null;
   }
 
-  // Same rule as the backend: 8+ characters with upper, lower and a number.
   String? _passwordRule(String? v) {
     final s = v ?? '';
     if (s.isEmpty) return 'Required';
-    if (!RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,100}$').hasMatch(s)) {
-      return 'Use 8+ characters with upper, lower case and a number';
-    }
+    if (s.length < 8) return 'At least 8 characters';
+    if (s.length > 72) return 'At most 72 characters';
     return null;
   }
 
-  void _submit() {
-    if (!_form.currentState!.validate()) return;
-    final users = ref.read(userStoreProvider);
-    if (_mode == AuthMode.login) {
-      final r = users.login(_id.text, _pw.text);
-      if (r.error != null) {
-        setState(() => _error = r.error);
-        return;
-      }
-      ref.read(apiBaseProvider.notifier).set(_server.text);
-      ref.read(sessionProvider.notifier).login(r.user!.name, r.user!.role, department: r.user!.department);
-      context.go('/app/dashboard');
-    } else {
-      final err = users.register(
-        firstName: _first.text,
-        lastName: _last.text,
-        email: _id.text,
-        phoneNumber: _phone.text,
-        password: _pw.text,
-      );
-      if (err != null) {
-        setState(() => _error = err);
-        return;
-      }
-      setState(() {
-        _mode = AuthMode.login;
-        _error = null;
-        _info = 'Registration received. Your account stays inactive until the System Administrator '
-            'assigns your role and department and activates it.';
-        _pw.clear();
-        _confirm.clear();
+  static String _str(dynamic v) => v == null ? '' : '$v';
+
+  void _switch(_Mode m) => setState(() {
+    _mode = m;
+    _error = null;
+    if (m == _Mode.register) _notice = null;
+  });
+
+  // ------------------------------------------------------------ sign in
+  Future<void> _signIn() async {
+    if (_busy || !_loginForm.currentState!.validate()) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+      _notice = null;
+    });
+    try {
+      final base = _server.text.trim();
+      final r = await ApiClient(base).post('/api/auth/login', body: {
+        'username': _username.text.trim(),
+        'password': _pw.text,
       });
+      final j = Map<String, dynamic>.from(r as Map);
+      final token = _str(j['accessToken']);
+      if (token.isEmpty) throw ApiException('The server did not return an access token.');
+      final code = _str(j['role']);
+      final name = '${_str(j['firstName'])} ${_str(j['lastName'])}'.trim();
+      final expires = j['expiresIn'] is num ? (j['expiresIn'] as num).toInt() : 86400;
+
+      ref.read(apiBaseProvider.notifier).set(base);
+      ref.read(sessionProvider.notifier).login(
+        name: name.isEmpty ? _str(j['username']) : name,
+        role: appRoleFor(code),
+        roleCode: code,
+        userId: j['userId'] is num ? (j['userId'] as num).toInt() : 0,
+        username: _str(j['username']),
+        token: token,
+        expiresInSeconds: expires,
+        department: _str(j['department']),
+      );
+      if (!mounted) return;
+      context.go('/app/dashboard');
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = switch (e.status) {
+          401 => 'Incorrect username or password.',
+          403 => 'This account is not active yet, or it is locked. New accounts must be activated by an '
+              'administrator before you can sign in.',
+          _ => e.message,
+        };
+      });
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
+  // ----------------------------------------------------------- register
+  Future<void> _register() async {
+    if (_busy || !_regForm.currentState!.validate()) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    String? opt(String v) => v.trim().isEmpty ? null : v.trim();
+    try {
+      final base = _server.text.trim();
+      final r = await ApiClient(base).post('/api/auth/register', body: {
+        'employeeNumber': _emp.text.trim(),
+        'firstName': _first.text.trim(),
+        'lastName': _last.text.trim(),
+        'username': _regUser.text.trim(),
+        'email': _email.text.trim(),
+        'phoneNumber': opt(_phone.text),
+        'password': _regPw.text,
+        'jobTitle': opt(_job.text),
+      });
+      final msg = r is Map ? _str(r['message']) : '';
+      ref.read(apiBaseProvider.notifier).set(base);
+      if (!mounted) return;
+      setState(() {
+        _username.text = _regUser.text.trim();
+        _pw.clear();
+        _notice = msg.isEmpty
+            ? 'Registration received. An administrator must activate your account before you can sign in.'
+            : msg;
+        for (final c in [_emp, _first, _last, _regUser, _email, _phone, _job, _regPw, _regPw2]) {
+          c.clear();
+        }
+        _mode = _Mode.signIn;
+      });
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  // ------------------------------------------------------ server address
   Future<void> _testServer() async {
     setState(() {
       _testing = true;
       _serverStatus = null;
     });
     try {
-      final d = await ApiClient(_server.text).get('/departments');
+      await ApiClient(_server.text).ping();
       setState(() {
         _serverOk = true;
-        _serverStatus = 'Connected. ${(d as List).length} item departments found.';
+        _serverStatus = 'Connected. The server is reachable.';
       });
     } catch (e) {
       setState(() {
@@ -136,11 +198,181 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     }
   }
 
+  // ---------------------------------------------------------------- UI
+  Widget _pwToggle() => IconButton(
+    tooltip: _showPw ? 'Hide password' : 'Show password',
+    onPressed: () => setState(() => _showPw = !_showPw),
+    icon: Icon(_showPw ? Icons.visibility_off_rounded : Icons.visibility_rounded),
+  );
+
+  Widget _signInForm(BuildContext c, ThemeData t) => Form(
+    key: _loginForm,
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Welcome back', style: t.textTheme.headlineMedium),
+      const SizedBox(height: 4),
+      const Text('Sign in to manage requisitions'),
+      if (_notice != null) ...[
+        const SizedBox(height: 12),
+        Text(_notice!, style: TextStyle(color: t.colorScheme.tertiary)),
+      ],
+      const SizedBox(height: 16),
+      TextFormField(
+        controller: _username,
+        autocorrect: false,
+        enabled: !_busy,
+        decoration: const InputDecoration(labelText: 'Username', prefixIcon: Icon(Icons.person_outline_rounded)),
+        validator: _required,
+      ),
+      const SizedBox(height: 12),
+      TextFormField(
+        controller: _pw,
+        obscureText: !_showPw,
+        enabled: !_busy,
+        decoration: InputDecoration(
+          labelText: 'Password',
+          prefixIcon: const Icon(Icons.lock_outline_rounded),
+          suffixIcon: _pwToggle(),
+        ),
+        validator: _required,
+        onFieldSubmitted: (_) => _signIn(),
+      ),
+      if (_error != null) ...[
+        const SizedBox(height: 12),
+        Text(_error!, style: TextStyle(color: t.colorScheme.error)),
+      ],
+      const SizedBox(height: 16),
+      SizedBox(
+        width: double.infinity,
+        child: FilledButton(
+          style: ctaStyle(c),
+          onPressed: _busy ? null : _signIn,
+          child: Text(_busy ? 'Signing in...' : 'Sign in'),
+        ),
+      ),
+      const SizedBox(height: 8),
+      Center(
+        child: TextButton(
+          onPressed: _busy ? null : () => _switch(_Mode.register),
+          child: const Text('New here? Create an account'),
+        ),
+      ),
+    ]),
+  );
+
+  Widget _registerForm(BuildContext c, ThemeData t) {
+    return Form(
+      key: _regForm,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Create your account', style: t.textTheme.headlineMedium),
+        const SizedBox(height: 4),
+        const Text('An administrator will assign your role and department and activate your account before you can sign in.'),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _emp,
+          enabled: !_busy,
+          decoration: const InputDecoration(labelText: 'Employee number', prefixIcon: Icon(Icons.badge_outlined)),
+          validator: _required,
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _first,
+          enabled: !_busy,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'First name'),
+          validator: _required,
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _last,
+          enabled: !_busy,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(labelText: 'Last name'),
+          validator: _required,
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _regUser,
+          enabled: !_busy,
+          autocorrect: false,
+          decoration: const InputDecoration(
+            labelText: 'Username',
+            helperText: 'You will use this to sign in',
+            prefixIcon: Icon(Icons.person_outline_rounded),
+          ),
+          validator: _usernameRule,
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _email,
+          enabled: !_busy,
+          keyboardType: TextInputType.emailAddress,
+          decoration: const InputDecoration(labelText: 'Email address', prefixIcon: Icon(Icons.mail_outline_rounded)),
+          validator: _emailRule,
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _phone,
+          enabled: !_busy,
+          keyboardType: TextInputType.phone,
+          decoration: const InputDecoration(labelText: 'Phone number (optional)', hintText: '+263 77 123 4567'),
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _job,
+          enabled: !_busy,
+          decoration: const InputDecoration(
+            labelText: 'Job title (optional)',
+            helperText: 'Helps the administrator choose your role and department',
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _regPw,
+          obscureText: !_showPw,
+          enabled: !_busy,
+          decoration: InputDecoration(
+            labelText: 'Password',
+            helperText: '8 to 72 characters',
+            prefixIcon: const Icon(Icons.lock_outline_rounded),
+            suffixIcon: _pwToggle(),
+          ),
+          validator: _passwordRule,
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _regPw2,
+          obscureText: !_showPw,
+          enabled: !_busy,
+          decoration: const InputDecoration(labelText: 'Confirm password', prefixIcon: Icon(Icons.lock_reset_rounded)),
+          validator: (v) => v != _regPw.text ? 'Passwords do not match' : null,
+          onFieldSubmitted: (_) => _register(),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          Text(_error!, style: TextStyle(color: t.colorScheme.error)),
+        ],
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            style: ctaStyle(c),
+            onPressed: _busy ? null : _register,
+            child: Text(_busy ? 'Submitting...' : 'Create account'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Center(
+          child: TextButton(
+            onPressed: _busy ? null : () => _switch(_Mode.signIn),
+            child: const Text('Already have an account? Sign in'),
+          ),
+        ),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final login = _mode == AuthMode.login;
-    final demo = ref.watch(userStoreProvider).users.where((u) => u.active && !u.accountLocked).toList();
-
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -156,173 +388,37 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                   padding: const EdgeInsets.all(24),
                   child: Builder(builder: (c) {
                     final t = Theme.of(c);
-                    return Form(
-                      key: _form,
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(login ? 'Welcome back' : 'Create your account', style: t.textTheme.headlineMedium),
-                        const SizedBox(height: 4),
-                        Text(login
-                            ? 'Sign in to manage requisitions'
-                            : 'Register to request access to the procurement portal'),
-                        const SizedBox(height: 16),
-                        if (_info != null) ...[
-                          Text(_info!, style: TextStyle(color: t.colorScheme.tertiary)),
-                          const SizedBox(height: 12),
-                        ],
-                        if (!login) ...[
-                          LayoutBuilder(builder: (context, box) {
-                            final first = TextFormField(
-                              controller: _first,
-                              textCapitalization: TextCapitalization.words,
-                              decoration: const InputDecoration(labelText: 'First name'),
-                              validator: _required,
-                            );
-                            final last = TextFormField(
-                              controller: _last,
-                              textCapitalization: TextCapitalization.words,
-                              decoration: const InputDecoration(labelText: 'Surname'),
-                              validator: _required,
-                            );
-                            if (box.maxWidth < 380) {
-                              return Column(children: [first, const SizedBox(height: 12), last]);
-                            }
-                            return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Expanded(child: first),
-                              const SizedBox(width: 12),
-                              Expanded(child: last),
-                            ]);
-                          }),
-                          const SizedBox(height: 12),
-                        ],
-                        TextFormField(
-                          controller: _id,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: InputDecoration(
-                            labelText: login ? 'Email or username' : 'Email address',
-                            prefixIcon: const Icon(Icons.mail_outline_rounded),
-                          ),
-                          validator: login ? _required : _emailRule,
-                        ),
-                        const SizedBox(height: 12),
-                        if (!login) ...[
+                    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      _mode == _Mode.signIn ? _signInForm(c, t) : _registerForm(c, t),
+                      const Divider(height: 32),
+                      ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        title: const Text('Server address'),
+                        subtitle: const Text('Where the backend is running'),
+                        children: [
                           TextFormField(
-                            controller: _phone,
-                            keyboardType: TextInputType.phone,
+                            controller: _server,
                             decoration: const InputDecoration(
-                              labelText: 'Phone number',
-                              hintText: '+263 77 123 4567',
-                              prefixIcon: Icon(Icons.phone_outlined),
-                            ),
-                            validator: _phoneRule,
+                                labelText: 'Server address', prefixIcon: Icon(Icons.dns_rounded)),
                           ),
-                          const SizedBox(height: 12),
-                        ],
-                        TextFormField(
-                          controller: _pw,
-                          obscureText: !_showPw,
-                          decoration: InputDecoration(
-                            labelText: 'Password',
-                            prefixIcon: const Icon(Icons.lock_outline_rounded),
-                            suffixIcon: IconButton(
-                              tooltip: _showPw ? 'Hide password' : 'Show password',
-                              onPressed: () => setState(() => _showPw = !_showPw),
-                              icon: Icon(_showPw ? Icons.visibility_off_rounded : Icons.visibility_rounded),
-                            ),
-                          ),
-                          validator: login ? _required : _passwordRule,
-                          onFieldSubmitted: (_) {
-                            if (login) _submit();
-                          },
-                        ),
-                        if (!login) ...[
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _confirm,
-                            obscureText: !_showPw,
-                            decoration: const InputDecoration(
-                              labelText: 'Confirm password',
-                              prefixIcon: Icon(Icons.lock_outline_rounded),
-                            ),
-                            validator: (v) => (v ?? '') != _pw.text ? 'Passwords do not match' : null,
-                          ),
-                        ],
-                        if (_error != null) ...[
-                          const SizedBox(height: 12),
-                          Text(_error!, style: TextStyle(color: t.colorScheme.error)),
-                        ],
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: FilledButton(
-                            style: ctaStyle(c),
-                            onPressed: _submit,
-                            child: Text(login ? 'Sign in' : 'Register'),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Center(
-                          child: TextButton(
-                            onPressed: () => _switch(login ? AuthMode.register : AuthMode.login),
-                            child: Text(login ? 'New here? Register' : 'Already registered? Sign in'),
-                          ),
-                        ),
-                        Center(
-                          child: Text(
-                            login
-                                ? 'Need help? Contact the System Administrator'
-                                : 'Accounts are activated by the System Administrator',
-                            style: t.textTheme.labelMedium,
-                          ),
-                        ),
-                        if (login) ...[
-                          const Divider(height: 32),
-                          Text('Demo accounts (password $kDemoPassword)', style: t.textTheme.labelLarge),
                           const SizedBox(height: 8),
-                          Wrap(spacing: 8, runSpacing: 8, children: [
-                            for (final u in demo)
-                              ActionChip(
-                                label: Text(u.role.label),
-                                onPressed: () => setState(() {
-                                  _id.text = u.email;
-                                  _pw.text = kDemoPassword;
-                                  _error = null;
-                                }),
-                              ),
-                          ]),
-                          const SizedBox(height: 8),
-                          ExpansionTile(
-                            tilePadding: EdgeInsets.zero,
-                            title: const Text('Server address'),
-                            subtitle: const Text('Used by departments, requisitions and stock'),
-                            children: [
-                              TextFormField(
-                                controller: _server,
-                                decoration: const InputDecoration(
-                                    labelText: 'Server address', prefixIcon: Icon(Icons.dns_rounded)),
-                                validator: (v) => (v == null || !v.trim().startsWith('http'))
-                                    ? 'Start with http:// or https://'
-                                    : null,
-                              ),
-                              const SizedBox(height: 8),
-                              Align(
-                                alignment: Alignment.centerLeft,
-                                child: OutlinedButton.icon(
-                                  onPressed: _testing ? null : _testServer,
-                                  icon: const Icon(Icons.wifi_tethering_rounded),
-                                  label: Text(_testing ? 'Testing...' : 'Test connection'),
-                                ),
-                              ),
-                              if (_serverStatus != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 8),
-                                  child: Text(_serverStatus!,
-                                      style: TextStyle(color: _serverOk ? t.colorScheme.tertiary : t.colorScheme.error)),
-                                ),
-                            ],
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: OutlinedButton.icon(
+                              onPressed: _testing ? null : _testServer,
+                              icon: const Icon(Icons.wifi_tethering_rounded),
+                              label: Text(_testing ? 'Testing...' : 'Test connection'),
+                            ),
                           ),
+                          if (_serverStatus != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(_serverStatus!,
+                                  style: TextStyle(color: _serverOk ? t.colorScheme.tertiary : t.colorScheme.error)),
+                            ),
                         ],
-                      ]),
-                    );
+                      ),
+                    ]);
                   }),
                 ),
               ]),

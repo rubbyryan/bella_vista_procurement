@@ -1,201 +1,215 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'api.dart';
 import 'models.dart';
+import 'state.dart';
 
-/// Demo accounts only. Nothing here talks to the backend: accounts live in
-/// memory and reset when the page is reloaded. Replace this file's methods with
-/// API calls (register, login, list users, update access) when the backend is
-/// ready.
-const kDemoPassword = 'Bella@2026';
-
-/// Departments the System Administrator can assign to a user.
+/// Departments the administrator can pick for a user. The backend stores the
+/// department as free text, so any value already on a user is kept as well.
 const kUserDepartments = [
   'Science', 'Mathematics', 'Humanities', 'Languages', 'Sports', 'Administration',
   'Boarding', 'Kitchen / Dining', 'Library', 'ICT', 'Facilities', 'Matron',
   'Stores', 'Transport', 'Security', 'Operations', 'Head Office',
 ];
 
-/// Mirrors the backend user fields (UserResponseDTO). The password is kept here
-/// only because this is the in-memory demo; a real API never returns it.
+// ---------------------------------------------------------------------------
+// Roles. The backend (UserRole enum) has 25 roles; the app's screens and
+// permissions are built around 9 (Role in models.dart). [appRole] says which
+// set of screens a backend role gets. Any role not listed as something more
+// specific below gets Requester-level screens: change the mapping here.
+// ---------------------------------------------------------------------------
+class BackendRole {
+  const BackendRole(this.code, this.label, this.appRole);
+  final String code;
+  final String label;
+  final Role appRole;
+}
+
+const kBackendRoles = <BackendRole>[
+  BackendRole('REQUESTER', 'Requester', Role.requester),
+  BackendRole('STOCK_CONTROLLER', 'Stock Controller', Role.stores),
+  BackendRole('SCHOOL_HEAD', 'School Head', Role.head),
+  BackendRole('OPERATIONS_MANAGER', 'Operations Manager', Role.om),
+  BackendRole('OD1', 'OD1', Role.od1),
+  BackendRole('OD2', 'OD2', Role.od2),
+  BackendRole('RA', 'RA', Role.ra),
+  BackendRole('SECURITY_OFFICER', 'Security Officer', Role.security),
+  BackendRole('SYSTEM_ADMIN', 'System Administrator', Role.admin),
+  BackendRole('SUPER_ADMIN', 'Super Administrator', Role.admin),
+  BackendRole('FRO', 'FRO', Role.requester),
+  BackendRole('DEPUTY_HEAD', 'Deputy Head', Role.requester),
+  BackendRole('HOA', 'HOA', Role.requester),
+  BackendRole('TIC_JNR', 'TIC JNR', Role.requester),
+  BackendRole('TIC_HIGH', 'TIC HIGH', Role.requester),
+  BackendRole('TEACHER_HIGH', 'Teacher (High)', Role.requester),
+  BackendRole('TEACHER_JNR', 'Teacher (Junior)', Role.requester),
+  BackendRole('GROUNDS_PERSON', 'Grounds Person', Role.requester),
+  BackendRole('MAINTENANCE_OFFICER', 'Maintenance Officer', Role.requester),
+  BackendRole('BOARDING_MASTER', 'Boarding Master', Role.requester),
+  BackendRole('CHEF', 'Chef', Role.requester),
+  BackendRole('MATRON', 'Matron', Role.requester),
+  BackendRole('HOUSE_PARENT', 'House Parent', Role.requester),
+  BackendRole('DTL', 'DTL', Role.requester),
+  BackendRole('DRIVER', 'Driver', Role.requester),
+];
+
+BackendRole? backendRole(String code) {
+  for (final r in kBackendRoles) {
+    if (r.code == code) return r;
+  }
+  return null;
+}
+
+Role appRoleFor(String code) => backendRole(code)?.appRole ?? Role.requester;
+
+String roleLabel(String code) => backendRole(code)?.label ?? code;
+
+const kSuperAdmin = 'SUPER_ADMIN';
+const kSystemAdmin = 'SYSTEM_ADMIN';
+
+// ---------------------------------------------------------------------------
+// User model (UserResponse) and request body (UserRequest)
+// ---------------------------------------------------------------------------
+String _s(dynamic v) => v == null ? '' : '$v';
+bool? _b(dynamic v) => v is bool ? v : null;
+DateTime? _dt(dynamic v) {
+  if (v is String) return DateTime.tryParse(v);
+  if (v is List && v.length >= 3) {
+    int i(dynamic x) => x is num ? x.toInt() : 0;
+    return DateTime(i(v[0]), i(v[1]), i(v[2]), v.length > 3 ? i(v[3]) : 0, v.length > 4 ? i(v[4]) : 0);
+  }
+  return null;
+}
+
 class AppUser {
   AppUser({
     required this.id,
+    required this.employeeNumber,
     required this.firstName,
     required this.lastName,
     required this.username,
     required this.email,
-    required this.password,
-    required this.role,
-    this.employeeNumber = '',
-    this.phoneNumber = '',
-    this.department = '',
-    this.jobTitle = '',
-    this.active = true,
-    this.accountLocked = false,
+    required this.phoneNumber,
+    required this.roleCode,
+    required this.department,
+    required this.jobTitle,
+    this.active,
+    this.accountLocked,
     this.lastLogin,
-    DateTime? createdAt,
-  })  : createdAt = createdAt ?? DateTime.now(),
-        updatedAt = createdAt ?? DateTime.now();
+    this.createdAt,
+  });
 
-  final String id;
+  factory AppUser.fromJson(Map<String, dynamic> j) => AppUser(
+    id: j['id'] is num ? (j['id'] as num).toInt() : int.tryParse('${j['id']}') ?? 0,
+    employeeNumber: _s(j['employeeNumber']),
+    firstName: _s(j['firstName']),
+    lastName: _s(j['lastName']),
+    username: _s(j['username']),
+    email: _s(j['email']),
+    phoneNumber: _s(j['phoneNumber']),
+    roleCode: _s(j['role']),
+    department: _s(j['department']),
+    jobTitle: _s(j['jobTitle']),
+    active: _b(j['active']),
+    accountLocked: _b(j['accountLocked']),
+    lastLogin: _dt(j['lastLogin']),
+    createdAt: _dt(j['createdAt']),
+  );
+
+  final int id;
+  final String employeeNumber;
   final String firstName;
   final String lastName;
   final String username;
   final String email;
-  final String password;
-  final String employeeNumber;
   final String phoneNumber;
+  final String roleCode;
+  final String department;
   final String jobTitle;
-  final DateTime createdAt;
-  String department; // empty until the administrator assigns one
-  Role role;
-  bool active;
-  bool accountLocked;
-  DateTime? lastLogin;
-  DateTime updatedAt;
+
+  /// null when the server does not send it (UserResponse without the status
+  /// fields: see backend_patch/UserResponse.java).
+  final bool? active;
+  final bool? accountLocked;
+  final DateTime? lastLogin;
+  final DateTime? createdAt;
 
   String get name => '$firstName $lastName'.trim();
+  String get roleName => roleLabel(roleCode);
 }
 
-class UserStore extends ChangeNotifier {
-  final List<AppUser> users = [
-    _seed('u_requester', 'Tendai', 'Moyo', 'requester', Role.requester, 'Science', 'BV-0231'),
-    _seed('u_stores', 'Rudo', 'Chigumba', 'stores', Role.stores, 'Stores', 'BV-0118'),
-    _seed('u_head', 'Farai', 'Ncube', 'head', Role.head, 'Administration', 'BV-0007'),
-    _seed('u_om', 'Blessing', 'Sibanda', 'om', Role.om, 'Operations', 'BV-0042'),
-    _seed('u_od1', 'Tafara', 'Dube', 'od1', Role.od1, 'Head Office', 'BV-0003'),
-    _seed('u_od2', 'Nyasha', 'Mutasa', 'od2', Role.od2, 'Head Office', 'BV-0004'),
-    _seed('u_ra', 'Chipo', 'Mlambo', 'ra', Role.ra, 'Head Office', 'BV-0001'),
-    _seed('u_security', 'S.', 'Mhlanga', 'security', Role.security, 'Security', 'BV-0390'),
-    _seed('u_admin', 'Admin', 'User', 'admin', Role.admin, 'ICT', 'BV-0002'),
-    AppUser(
-      id: 'u_pending',
-      firstName: 'Kudzai',
-      lastName: 'Banda',
-      username: 'kbanda',
-      email: 'kbanda@bellavista.ac.zw',
-      phoneNumber: '+263 77 123 4567',
-      password: kDemoPassword,
-      role: Role.requester,
-      active: false,
-    ),
-  ];
+class UserForm {
+  UserForm({
+    required this.employeeNumber,
+    required this.firstName,
+    required this.lastName,
+    required this.username,
+    required this.email,
+    required this.phoneNumber,
+    required this.password,
+    required this.roleCode,
+    required this.department,
+    required this.jobTitle,
+  });
 
-  static AppUser _seed(String id, String first, String last, String mail, Role role, String dept, String emp) =>
-      AppUser(
-        id: id,
-        firstName: first,
-        lastName: last,
-        username: mail,
-        email: '$mail@bellavista.ac.zw',
-        employeeNumber: emp,
-        department: dept,
-        role: role,
-        password: kDemoPassword,
-      );
+  final String employeeNumber;
+  final String firstName;
+  final String lastName;
+  final String username;
+  final String email;
+  final String phoneNumber;
+  final String password; // empty = leave unchanged on update
+  final String roleCode;
+  final String department;
+  final String jobTitle;
 
-  int _seq = 0;
-  int _failedLogins = 0;
-  DateTime? _lockedUntil;
+  String? _n(String v) => v.trim().isEmpty ? null : v.trim();
 
-  /// Sign in with email, username or employee number.
-  ({AppUser? user, String? error}) login(String identifier, String password) {
-    final now = DateTime.now();
-    if (_lockedUntil != null && now.isBefore(_lockedUntil!)) {
-      final mins = _lockedUntil!.difference(now).inMinutes + 1;
-      return (user: null, error: 'Too many failed attempts. Try again in $mins min.');
-    }
-    final key = identifier.trim().toLowerCase();
-    AppUser? u;
-    for (final x in users) {
-      if (x.email.toLowerCase() == key ||
-          x.username.toLowerCase() == key ||
-          (x.employeeNumber.isNotEmpty && x.employeeNumber.toLowerCase() == key)) {
-        u = x;
-        break;
-      }
-    }
-    if (u == null || u.password != password) {
-      _failedLogins++;
-      if (_failedLogins >= 5) {
-        _lockedUntil = now.add(const Duration(minutes: 15));
-        _failedLogins = 0;
-        return (user: null, error: 'Too many failed attempts. Locked for 15 minutes.');
-      }
-      return (user: null, error: 'Incorrect email / username or password.');
-    }
-    if (u.accountLocked) {
-      return (user: null, error: 'Your account is locked. Please contact the System Administrator.');
-    }
-    if (!u.active) {
-      return (user: null, error: 'Your account is pending activation by the System Administrator.');
-    }
-    _failedLogins = 0;
-    u.lastLogin = now;
-    notifyListeners();
-    return (user: u, error: null);
-  }
-
-  /// Self-registration. The account starts inactive with the Requester role and
-  /// no department; the System Administrator assigns those and activates it.
-  String? register({
-    required String firstName,
-    required String lastName,
-    required String email,
-    required String phoneNumber,
-    required String password,
-  }) {
-    final mail = email.trim().toLowerCase();
-    if (users.any((u) => u.email.toLowerCase() == mail)) {
-      return 'An account with that email already exists.';
-    }
-    // Username is derived from the email address (made unique if needed).
-    final base = mail.split('@').first;
-    var username = base;
-    var n = 1;
-    while (users.any((u) => u.username.toLowerCase() == username)) {
-      username = '$base${++n}';
-    }
-    users.add(AppUser(
-      id: 'u_new${++_seq}',
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      username: username,
-      email: email.trim(),
-      phoneNumber: phoneNumber.trim(),
-      password: password,
-      role: Role.requester,
-      active: false,
-    ));
-    notifyListeners();
-    return null;
-  }
-
-  /// Saves role, department and active flag together. Returns an error message,
-  /// or null on success. [isSelf] is true when the administrator is editing
-  /// their own account.
-  String? updateUserAccess(
-    AppUser u, {
-    required Role role,
-    required String department,
-    required bool active,
-    required bool isSelf,
-  }) {
-    if (isSelf && (role != u.role || !active)) {
-      return 'You cannot change your own role or deactivate your own account.';
-    }
-    if (active && department.isEmpty) {
-      return 'Select a department before activating this account.';
-    }
-    u.role = role;
-    u.department = department;
-    u.active = active;
-    if (active) u.accountLocked = false;
-    u.updatedAt = DateTime.now();
-    notifyListeners();
-    return null;
-  }
+  Map<String, dynamic> toJson() => {
+    'employeeNumber': employeeNumber.trim(),
+    'firstName': firstName.trim(),
+    'lastName': lastName.trim(),
+    'username': username.trim(),
+    'email': email.trim(),
+    'phoneNumber': _n(phoneNumber),
+    if (password.isNotEmpty) 'password': password,
+    'role': roleCode,
+    'department': _n(department),
+    'jobTitle': _n(jobTitle),
+  };
 }
 
-final userStoreProvider = ChangeNotifierProvider<UserStore>((ref) => UserStore());
+// ---------------------------------------------------------------------------
+// Repository: one method per user-management endpoint
+// ---------------------------------------------------------------------------
+class UserRepo {
+  UserRepo(this.api);
+  final ApiClient api;
+
+  AppUser _one(dynamic v) => AppUser.fromJson(Map<String, dynamic>.from(v as Map));
+
+  /// GET /api/procurement/users
+  Future<List<AppUser>> all() async =>
+      ((await api.get('/users')) as List? ?? []).whereType<Map>().map(_one).toList();
+
+  /// GET /api/procurement/users/{id}
+  Future<AppUser> byId(int id) async => _one(await api.get('/users/$id'));
+
+  /// POST /api/procurement/users
+  Future<AppUser> create(UserForm f) async => _one(await api.post('/users', body: f.toJson()));
+
+  /// PUT /api/procurement/users/{id}
+  Future<AppUser> update(int id, UserForm f) async => _one(await api.put('/users/$id', body: f.toJson()));
+
+  /// DELETE /api/procurement/users/{id} (deactivates the account)
+  Future<void> deactivate(int id) => api.delete('/users/$id');
+
+  /// PATCH /api/procurement/users/{id}/activate
+  /// SUPER_ADMIN can activate anyone; SYSTEM_ADMIN can activate regular users only.
+  Future<void> activate(int id) => api.patch('/users/$id/activate');
+}
+
+final userRepoProvider = Provider<UserRepo>((ref) => UserRepo(ref.watch(apiProvider)));
+final usersP = FutureProvider.autoDispose<List<AppUser>>((ref) => ref.watch(userRepoProvider).all());
+final userByIdP =
+FutureProvider.autoDispose.family<AppUser, int>((ref, id) => ref.watch(userRepoProvider).byId(id));

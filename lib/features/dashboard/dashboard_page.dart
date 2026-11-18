@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'admin_dashboard.dart';
 
 import '../../core/models.dart';
 import '../../core/state.dart';
@@ -85,6 +86,7 @@ class DashboardPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final me = ref.watch(sessionProvider);
     if (me == null) return const SizedBox();
+    if (me.role == Role.admin) return const AdminDashboard();
     final reqsA = ref.watch(requisitionsP);
     final prsA = ref.watch(prsP);
     final posA = ref.watch(posP);
@@ -96,7 +98,7 @@ class DashboardPage extends ConsumerWidget {
     final loading = [reqsA, prsA, posA, grvsA].any((a) => a.isLoading && !a.hasValue);
 
     PageBody wrap(List<Widget> c) => PageBody(
-      title: '${me.role.label} Dashboard',
+      title: '${me.roleTitle} Dashboard',
       subtitle: '${_greeting()}, ${me.name.split(' ').first}${me.role == Role.requester && me.department.isNotEmpty ? ' | ${me.department}' : ''}',
       children: c,
     );

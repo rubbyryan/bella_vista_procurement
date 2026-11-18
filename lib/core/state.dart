@@ -19,13 +19,33 @@ class ApiBaseNotifier extends Notifier<String> {
 }
 
 final apiBaseProvider = NotifierProvider<ApiBaseNotifier, String>(ApiBaseNotifier.new);
-final apiProvider = Provider<ApiClient>((ref) => ApiClient(ref.watch(apiBaseProvider)));
+final apiProvider = Provider<ApiClient>((ref) => ApiClient(
+  ref.watch(apiBaseProvider),
+  token: ref.watch(sessionProvider.select((s) => s?.token)),
+  onUnauthorized: () => ref.read(sessionProvider.notifier).logout(),
+));
 
 class Session {
-  const Session(this.name, this.role, [this.department = '']);
+  const Session(
+      this.name,
+      this.role, {
+        this.department = '',
+        this.userId,
+        this.username = '',
+        this.roleCode = '',
+        this.token = '',
+      });
   final String name;
-  final Role role;
+  final Role role; // what the app shows (mapped from the backend role)
   final String department; // assigned by the System Administrator (may be empty)
+  final int? userId;
+  final String username;
+  final String roleCode; // backend role, e.g. SUPER_ADMIN, SYSTEM_ADMIN, STOCK_CONTROLLER
+  final String token; // JWT sent as a Bearer token
+
+  /// Name shown in the UI. SUPER_ADMIN and SYSTEM_ADMIN use the same admin screens
+  /// but are different roles, so the title tells them apart.
+  String get roleTitle => roleCode == 'SUPER_ADMIN' ? 'Super Administrator' : role.label;
 }
 
 class SessionNotifier extends Notifier<Session?> {
@@ -34,25 +54,68 @@ class SessionNotifier extends Notifier<Session?> {
     final p = ref.read(prefsProvider);
     final n = p.getString('user_name');
     final r = p.getString('user_role');
-    if (n == null || r == null) return null;
+    final token = p.getString('auth_token') ?? '';
+    final expires = p.getInt('auth_expires') ?? 0;
+    if (n == null || r == null || token.isEmpty) return null;
+    if (DateTime.now().millisecondsSinceEpoch >= expires) {
+      _clear(p); // token expired while the app was closed
+      return null;
+    }
     final role = Role.values.where((x) => x.name == r);
-    return role.isEmpty ? null : Session(n, role.first, p.getString('user_dept') ?? '');
+    if (role.isEmpty) return null;
+    return Session(
+      n,
+      role.first,
+      department: p.getString('user_dept') ?? '',
+      userId: p.getInt('user_id'),
+      username: p.getString('user_username') ?? '',
+      roleCode: p.getString('user_role_code') ?? '',
+      token: token,
+    );
   }
 
-  void login(String name, Role role, {String department = ''}) {
+  /// Stores the result of POST /api/auth/login.
+  void login({
+    required String name,
+    required Role role,
+    required String roleCode,
+    required int userId,
+    required String username,
+    required String token,
+    required int expiresInSeconds,
+    String department = '',
+  }) {
     final p = ref.read(prefsProvider);
     p.setString('user_name', name.trim());
     p.setString('user_role', role.name);
+    p.setString('user_role_code', roleCode);
     p.setString('user_dept', department.trim());
-    state = Session(name.trim(), role, department.trim());
+    p.setString('user_username', username);
+    p.setInt('user_id', userId);
+    p.setString('auth_token', token);
+    p.setInt('auth_expires', DateTime.now().millisecondsSinceEpoch + expiresInSeconds * 1000);
+    state = Session(
+      name.trim(),
+      role,
+      department: department.trim(),
+      userId: userId,
+      username: username,
+      roleCode: roleCode,
+      token: token,
+    );
   }
 
   void logout() {
-    final p = ref.read(prefsProvider);
-    p.remove('user_name');
-    p.remove('user_role');
-    p.remove('user_dept');
+    _clear(ref.read(prefsProvider));
     state = null;
+  }
+
+  static void _clear(SharedPreferences p) {
+    for (final k in [
+      'user_name', 'user_role', 'user_role_code', 'user_dept', 'user_username', 'user_id', 'auth_token', 'auth_expires',
+    ]) {
+      p.remove(k);
+    }
   }
 }
 
