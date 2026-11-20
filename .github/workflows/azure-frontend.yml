@@ -1,0 +1,43 @@
+# Save in the FRONTEND repo (rubbyryan/bella_vista_procurement) as:
+#   .github/workflows/azure-frontend.yml
+# Builds the Flutter web app and deploys it to Azure Static Web Apps
+# every time you push to main (or when you press "Run workflow").
+#
+# Needs in the repo (Settings > Secrets and variables > Actions):
+#   Secret   AZURE_STATIC_WEB_APPS_API_TOKEN  = deployment token of the Static Web App
+#   Variable API_BASE_URL                     = https://YOUR-BACKEND-ADDRESS (no trailing slash)
+
+name: Deploy frontend to Azure Static Web Apps
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install packages
+        run: flutter pub get
+
+      - name: Build the web app
+        run: flutter build web --release --dart-define=API_BASE_URL=${{ vars.API_BASE_URL }}
+
+      - name: Deploy to Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: upload
+          app_location: build/web
+          skip_app_build: true
+          skip_api_build: true
